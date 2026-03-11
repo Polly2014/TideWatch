@@ -23,18 +23,18 @@ TideWatch/
 ├── src/
 │   └── tidewatch/          # Python 包 (import tidewatch.xxx)
 │       ├── __init__.py
-│       ├── server.py       # ⭐ MCP 主入口 (FastMCP + 9 tools)
+│       ├── server.py       # ⭐ MCP 主入口 (FastMCP + 10 tools)
 │       ├── data.py         # 数据层 (AKShare, 带缓存)
 │       ├── technical.py    # 技术分析引擎
 │       ├── regime.py       # 市场体制识别
 │       ├── narrative.py    # 叙事式分析报告生成
-│       ├── tracker.py      # 信号追踪系统 (SQLite)
-│       └── guardrails.py   # 🆕 行为护栏 (Anti-FOMO)
+│       ├── tracker.py      # 信号追踪系统 (SQLite, 5min去重)
+│       └── guardrails.py   # 行为护栏 (Anti-FOMO, 3条规则)
 └── data/                   # 运行时数据 (git-ignored)
     └── signals.db          # 信号追踪数据库
 ```
 
-注意：Phase 2 计划加入 `api_server.py` (FastAPI REST API) 和 Web Dashboard，当前 Phase 1 仅 MCP Server。
+注意：Phase 3 计划加入产业链图谱和 LLM 叙事润色。Phase 4 加入 Web Dashboard。
 
 ## MCP Tools
 
@@ -46,9 +46,9 @@ TideWatch/
 | `get_money_flow_detail` | 资金流向详细分析 |
 | `get_stock_news_report` | 个股新闻消息面 |
 | `get_north_flow_report` | 北向资金分析 |
-| `review_signals` | 🆕 查看历史信号和胜率统计 |
+| `review_signals` | 查看历史信号和胜率统计 |
 | `update_signal_outcomes` | 回填历史信号实际走势 |
-| `scan_market` | 🆕 全市场扫描强弱股 Top/Bottom N |
+| `scan_market` | 全市场扫描强弱股 Top/Bottom N（盘中效果最佳） |
 | `server_status` | 服务器状态 |
 
 ## Design Principles
@@ -84,6 +84,7 @@ TideWatch/
 
 ## Known Issues
 
-- `stock_zh_a_spot_em()` 接口不稳定（全市场5000+股票），已有冷却+fallback机制
+- `stock_zh_a_spot_em()` 接口不稳定（全市场5000+股票），已有冷却+fallback机制。`scan_market` 依赖此接口，盘中使用效果最佳
 - MCP 工具不要加 `dict[str, Any]` 返回类型注解（FastMCP 2.x outputSchema 冲突）
 - 日志必须输出到 stderr（MCP 用 stdout 通信）
+- 信号记录已加 5 分钟去重窗口，同一 symbol 短时间内不重复入库
