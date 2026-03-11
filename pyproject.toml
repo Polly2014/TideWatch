@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "tidewatch"
+version = "0.1.0"
+description = "观潮 (TideWatch) — AI 投研搭档 MCP Server，多维融合股票分析引擎"
+authors = ["Polly <polly@polly.wang>"]
+readme = "README.md"
+license = "MIT"
+packages = [{include = "tidewatch", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastmcp = ">=2.0.0"
+akshare = ">=1.15.0"
+pandas = ">=2.0.0"
+numpy = ">=1.24.0"
+python-dotenv = ">=1.0.0"
+
+[tool.poetry.scripts]
+tidewatch = "tidewatch.server:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
