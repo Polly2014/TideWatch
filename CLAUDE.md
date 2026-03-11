@@ -54,18 +54,30 @@ TideWatch/
 
 ## Roadmap
 
-### Phase 1: ✅ MCP Engine (current)
-- AKShare 数据接入
-- 技术分析 + 市场体制识别
-- 冲突检测
+### Phase 1: ✅ MCP Engine (2026-03-11)
+- [x] AKShare 数据接入（日K线 + 资金流向 + 新闻 + 北向资金 + 龙虎榜）
+- [x] 技术分析（8维评分：MA/RSI/MACD/KDJ/BOLL/ATR/OBV/形态识别）
+- [x] 市场体制识别（6种：牛/熊/横盘/高波动/震荡偏强/震荡偏弱）
+- [x] 冲突检测（5种矛盾信号：技术vs资金、个股vs大盘、量价背离等）
+- [x] 叙事式分析报告（形态驱动开场 + 多空博弈 + 有立场结论）
+- [x] 代理兼容（NO_PROXY + 失败冷却60s + 日K线fallback）
 
-### Phase 2: 引擎增强
-- [ ] 信号追踪 + 历史胜率
-- [ ] 行为护栏（Anti-FOMO）
-- [ ] 产业链图谱
-- [ ] 叙事式分析报告（LLM 生成）
+### Phase 2: 引擎增强（下一步）
+- [ ] 信号追踪系统（SQLite，每次分析自动记录，追踪后续走势算胜率）
+- [ ] 行为护栏 v1（追高检测 / 集中度预警 / 连续亏损检测）
+- [ ] scan_market 工具（全市场扫描 Top/Bottom 10 强弱股）
 
-### Phase 3: Web Dashboard
-- [ ] Next.js 前端
-- [ ] REST API 暴露
-- [ ] 实时推送
+### Phase 3: 深度进化
+- [ ] 产业链图谱 v1（新能源/AI/消费核心链硬编码）
+- [ ] LLM 叙事润色（接 CopilotX API）
+- [ ] 雪球数据源（备用，实时数据更快）
+
+### Phase 4: 触达层
+- [ ] Web Dashboard（Next.js 前端 + REST API）
+- [ ] 实时推送（自选股监控 + 信号变化通知）
+
+## Known Issues
+
+- `stock_zh_a_spot_em()` 接口不稳定（全市场5000+股票），已有冷却+fallback机制
+- MCP 工具不要加 `dict[str, Any]` 返回类型注解（FastMCP 2.x outputSchema 冲突）
+- 日志必须输出到 stderr（MCP 用 stdout 通信）
