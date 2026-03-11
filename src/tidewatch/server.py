@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 
 from .data import MarketData
+from .guardrails import check_guardrails
 from .narrative import NarrativeGenerator
 from .regime import RegimeDetector
 from .technical import TechnicalAnalyzer
@@ -214,7 +215,20 @@ async def analyze_stock(
         "timestamp": datetime.now().isoformat(),
     }
 
-    # 9. 记录信号到追踪系统（自动，不影响主流程）
+    # 9. 行为护栏检测
+    try:
+        guardrail_warnings = check_guardrails(symbol, tech)
+        if guardrail_warnings:
+            report["guardrails"] = guardrail_warnings
+            # 护栏警告也加入叙事末尾
+            guardrail_text = "\n\n".join(
+                f"{w['message']} {w['advice']}" for w in guardrail_warnings
+            )
+            report["narrative"] += "\n\n" + guardrail_text
+    except Exception as e:
+        logger.warning(f"行为护栏检测失败: {e}")
+
+    # 10. 记录信号到追踪系统（自动，不影响主流程）
     try:
         signal_id = record_signal(
             symbol=symbol,
