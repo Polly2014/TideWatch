@@ -95,6 +95,20 @@ TideWatch-MCP-Server/
 
 ## Deployment
 
+### Azure VM
+
+SSH 配置见 `ssh.config`（git-ignored），快捷连接：
+```bash
+ssh -F ssh.config Azure-Server
+```
+
+服务管理：
+```bash
+ssh -F ssh.config Azure-Server "sudo systemctl status tidewatch"   # 状态
+ssh -F ssh.config Azure-Server "sudo systemctl restart tidewatch"  # 重启
+ssh -F ssh.config Azure-Server "cd ~/GitHub_Workspace/TideWatch-MCP-Server && git pull && sudo systemctl restart tidewatch"  # 更新部署
+```
+
 ### 本地模式 (stdio)
 ```bash
 poetry run tidewatch            # Claude Desktop / Cursor / VS Code
