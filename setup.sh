@@ -41,18 +41,20 @@ poetry install --no-interaction
 # Setup .env
 if [ ! -f "$REPO_DIR/.env" ]; then
     echo ""
-    echo "Creating .env from template..."
-    cat > "$REPO_DIR/.env" << 'EOF'
+    echo "Creating .env with auto-generated API key..."
+    GENERATED_KEY="polly-tidewatch-$(openssl rand -hex 12)"
+    cat > "$REPO_DIR/.env" << EOF
 # TideWatch MCP Server — Environment Variables
 # ==============================================
 
-# API Key for remote HTTP access (required for production)
-MCP_API_KEY=polly-tidewatch-CHANGE-ME
+# API Key for remote HTTP access (auto-generated)
+MCP_API_KEY=$GENERATED_KEY
 
 # CopilotX LLM (for narrative polishing)
 COPILOTX_API_KEY=your-copilotx-key-here
 EOF
-    echo "  ⚠️  Please edit .env to set your API keys!"
+    echo "  ✅ API Key generated: $GENERATED_KEY"
+    echo "  ⚠️  Please edit .env to set COPILOTX_API_KEY!"
 fi
 
 # Create data directory

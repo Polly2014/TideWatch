@@ -32,7 +32,6 @@ MCP Tools:
 """
 
 import argparse
-import argparse
 import asyncio
 import logging
 import os
@@ -44,7 +43,6 @@ from typing import Any
 import pandas as pd
 from dotenv import load_dotenv
 from fastmcp import FastMCP
-from fastmcp.server.auth import TokenVerifier, AccessToken
 
 from .data import MarketData
 from .guardrails import check_guardrails
@@ -105,6 +103,8 @@ narrator = NarrativeGenerator()
 MCP_API_KEY = os.getenv("MCP_API_KEY", "")
 MCP_API_KEY_ENABLED = bool(MCP_API_KEY)
 
+VERSION = "0.2.0"
+
 # 服务器统计
 server_stats = {
     "start_time": datetime.now().isoformat(),
@@ -116,6 +116,21 @@ server_stats = {
 # ============================================================================
 # MCP Tools
 # ============================================================================
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    """Health check endpoint (no auth required)"""
+    from starlette.responses import JSONResponse
+    return JSONResponse({
+        "status": "healthy",
+        "server": "TideWatch-观潮",
+        "version": VERSION,
+        "transport": "streamable-http",
+        "tools_count": 10,
+        "auth_enabled": MCP_API_KEY_ENABLED,
+        "analyses_completed": server_stats["analyses_completed"],
+    })
 
 
 @mcp.tool()
@@ -850,7 +865,7 @@ def main():
     args = parser.parse_args()
 
     logger.info("🌊 观潮 (TideWatch) MCP Server 启动中...")
-    logger.info("版本: 0.1.0")
+    logger.info(f"版本: {VERSION}")
     logger.info("工具: analyze_stock, get_regime, compare_stocks, get_money_flow_detail, get_stock_news_report, get_north_flow_report")
 
     if args.http:
