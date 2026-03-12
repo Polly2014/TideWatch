@@ -32,9 +32,11 @@ MCP Tools:
 """
 
 import argparse
+import concurrent.futures
 import logging
 import os
 import sys
+import time as _time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -107,7 +109,7 @@ narrator = NarrativeGenerator()
 MCP_API_KEY = os.getenv("MCP_API_KEY", "")
 MCP_API_KEY_ENABLED = bool(MCP_API_KEY)
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # 服务器统计
 server_stats = {
@@ -292,7 +294,7 @@ async def analyze_stock(
     except Exception as e:
         logger.warning(f"行为护栏检测失败: {e}")
 
-    # 10. 记录信号到追踪系统（自动，不影响主流程）
+    # 11. 记录信号到追踪系统（自动，不影响主流程）
     try:
         signal_id = record_signal(
             symbol=symbol,
@@ -536,20 +538,10 @@ async def server_status():
     """
     return {
         "name": "观潮 (TideWatch)",
-        "version": "0.2.0",
+        "version": VERSION,
         "description": "AI 投研搭档 — 多维融合股票分析引擎",
         "stats": server_stats,
-        "tools": [
-            "analyze_stock — 个股综合分析（核心工具）",
-            "get_regime — 市场体制识别",
-            "compare_stocks — 多股横向对比",
-            "get_money_flow_detail — 资金流向详细分析",
-            "get_stock_news_report — 个股新闻消息面",
-            "get_north_flow_report — 北向资金分析",
-            "review_signals — 查看历史信号和胜率统计",
-            "update_signal_outcomes — 回填历史信号实际走势",
-            "scan_market — 🆕 全市场扫描强弱股 Top/Bottom N",
-        ],
+        "tools": [t.name for t in await mcp.list_tools()],
     }
 
 
@@ -728,16 +720,20 @@ async def scan_market(top_n: int = 10):
     Returns:
         持仓全部 + 自选全部 + 热门 Top/Bottom N，按评分排序
     """
-    import concurrent.futures
-
     logger.info(f"🔍 三级股票池扫描: Top/Bottom {top_n}")
     server_stats["scans_completed"] += 1
 
-    # 5分钟缓存：避免频繁请求被 finance.eastmoney.com 封
-    import time as _time
+    # 5分钟缓存：缓存完整结果，返回时按 top_n 切片
     if _scan_cache["result"] and (_time.monotonic() - _scan_cache["time"]) < _SCAN_CACHE_TTL:
         logger.info("⚙️ 使用扫描缓存（%ds内）", int(_SCAN_CACHE_TTL - (_time.monotonic() - _scan_cache["time"])))
-        return _scan_cache["result"]
+        cached = _scan_cache["result"]
+        # 按当前 top_n 重新切片热门池
+        hot_all = cached.get("_hot_sorted", [])
+        return {
+            **cached,
+            "hot_strongest": hot_all[:top_n],
+            "hot_weakest": sorted(hot_all[-top_n:], key=lambda x: x["score"]) if len(hot_all) > top_n else [],
+        }
 
     pool = get_scan_pool()
     holdings_info = {h["symbol"]: h for h in get_holdings()}
@@ -813,7 +809,7 @@ async def scan_market(top_n: int = 10):
     holding_results.sort(key=lambda x: x["score"], reverse=True)
     watchlist_results.sort(key=lambda x: x["score"], reverse=True)
 
-    # 热门取 Top N / Bottom N
+    # 热门按评分排序（完整列表缓存，返回时按 top_n 切片）
     hot_results.sort(key=lambda x: x["score"], reverse=True)
     hot_strongest = hot_results[:top_n]
     hot_weakest = hot_results[-top_n:] if len(hot_results) > top_n else []
@@ -837,6 +833,7 @@ async def scan_market(top_n: int = 10):
         "watchlist_hint": watchlist_hint,
         "hot_strongest": hot_strongest,
         "hot_weakest": hot_weakest,
+        "_hot_sorted": hot_results,  # 完整列表用于缓存切片
         "pool_size": {
             "holdings": len(pool["holdings"]),
             "watchlist": len(pool["watchlist"]),
