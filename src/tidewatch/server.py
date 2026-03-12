@@ -37,8 +37,14 @@ import logging
 import os
 import sys
 import time as _time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+# 北京时间 UTC+8
+_BJ_TZ = timezone(timedelta(hours=8))
+
+def _now_bj():
+    return datetime.now(_BJ_TZ)
 from typing import Any
 
 import pandas as pd
@@ -113,7 +119,7 @@ VERSION = "0.3.0"
 
 # 服务器统计
 server_stats = {
-    "start_time": datetime.now().isoformat(),
+    "start_time": _now_bj().isoformat(),
     "analyses_completed": 0,
     "scans_completed": 0,
 }
@@ -268,7 +274,7 @@ async def analyze_stock(
             "stop_loss_hint": f"ATR止损建议: 价格 - {tech['volatility']['atr_14'] * regime_adj['stop_loss_multiplier']:.2f}",
         },
         "narrative": narrator.generate(stock_name, tech, regime_result, money, conflicts, final_signal),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
     # 9. LLM 叙事润色（可选，失败时保留模板叙事）
@@ -383,7 +389,7 @@ async def get_regime():
         "regime": regime_result,
         "adjustment": adjustment,
         "indices": indices,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -443,7 +449,7 @@ async def compare_stocks(symbols: str):
         "comparison": valid + errors,
         "strongest": valid[0]["code"] if valid else None,
         "weakest": valid[-1]["code"] if valid else None,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -489,7 +495,7 @@ async def get_money_flow_detail(symbol: str, days: int = 10):
         "current": current,
         "history": history_summary,
         "lhb_records": lhb,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -514,7 +520,7 @@ async def get_stock_news_report(symbol: str, limit: int = 10):
         "stock": {"code": symbol, "name": name},
         "news": news,
         "count": len(news),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -551,7 +557,7 @@ async def get_north_flow_report(days: int = 20):
     return {
         "north_flow": summary,
         "days": days,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -614,7 +620,7 @@ async def review_signals(days: int = 30, symbol: str = ""):
     return {
         "stats": stats,
         "signals": signals_summary,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -635,7 +641,7 @@ async def update_signal_outcomes():
     return {
         "updated": result,
         "message": f"回填完成: 5日={result['5d']}条, 10日={result['10d']}条, 20日={result['20d']}条",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
 
@@ -873,7 +879,7 @@ async def scan_market(top_n: int = 10):
             "total": len(all_symbols),
             "scanned": len(results),
         },
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": _now_bj().isoformat(),
     }
 
     # 缓存结果
