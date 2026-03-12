@@ -20,7 +20,7 @@
 ### 项目结构
 
 ```
-TideWatch/
+TideWatch-MCP-Server/
 ├── SPEC.md                  # 本文件
 ├── README.md                # 项目说明
 ├── pyproject.toml           # 项目配置
