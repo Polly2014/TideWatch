@@ -848,7 +848,9 @@ async def scan_market(top_n: int = 10):
     _scan_cache["result"] = scan_result
     _scan_cache["time"] = _time.monotonic()
 
-    return scan_result
+    # _hot_sorted 是内部缓存字段，不暴露给客户端
+    output = {k: v for k, v in scan_result.items() if not k.startswith("_")}
+    return output
 
 
 # ============================================================================

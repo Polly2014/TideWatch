@@ -25,14 +25,15 @@ TideWatch-MCP-Server/
 ├── src/
 │   └── tidewatch/          # Python 包 (import tidewatch.xxx)
 │       ├── __init__.py
-│       ├── server.py       # ⭐ MCP 主入口 (FastMCP + stdio/HTTP 双模式)
+│       ├── server.py       # ⭐ MCP 主入口 (FastMCP + stdio/HTTP 双模式, 12 工具)
 │       ├── data.py         # 数据层 (AKShare, 带缓存)
 │       ├── technical.py    # 技术分析引擎
 │       ├── regime.py       # 市场体制识别
 │       ├── narrative.py    # 叙事式分析报告生成
 │       ├── llm.py          # LLM 叙事润色 (CopilotX + Claude Sonnet 4)
 │       ├── tracker.py      # 信号追踪系统 (SQLite, 5min去重)
-│       └── guardrails.py   # 行为护栏 (Anti-FOMO, 3条规则)
+│       ├── guardrails.py   # 行为护栏 (Anti-FOMO, 3条规则)
+│       └── portfolio.py    # 三级股票池 (持仓+自选+热饰70只)
 ├── config/                 # 部署配置
 │   ├── nginx_tidewatch.polly.wang.conf  # Nginx 反向代理
 │   └── mcp_remote.example.json         # 客户端配置示例
@@ -57,7 +58,9 @@ TideWatch-MCP-Server/
 | `get_north_flow_report` | 北向资金分析 |
 | `review_signals` | 查看历史信号和胜率统计 |
 | `update_signal_outcomes` | 回填历史信号实际走势 |
-| `scan_market` | 全市场扫描强弱股 Top/Bottom N（盘中效果最佳） |
+| `scan_market` | 三级股票池扫描（持仓+自选+热饰70只，并发K线+技术评分）5min缓存 |
+| `manage_holdings` | 持仓管理（添加/移除/查看，带买入价和数量）|
+| `manage_watchlist` | 自选股管理（添加/移除/查看，可备注关注原因）|
 | `server_status` | 服务器状态 |
 
 ## Design Principles
@@ -84,8 +87,8 @@ TideWatch-MCP-Server/
 
 ### Phase 3: 深度进化
 - [x] LLM 叙事润色（CopilotX API + Claude Sonnet 4，失败 fallback 模板叙事）(2026-03-12)
-- [ ] scan_market v2 — 三级股票池扫描（持仓+自选+热门80只，并发K线+技术评分，绕过 push2 反爬）
-- [ ] manage_holdings / manage_watchlist — 持仓管理（带买入价）+ 自选股管理（SQLite）
+- [x] scan_market v2 — 三级股票池扫描（持仓+自选+热饰70只，并发K线+技术评分，绕过 push2 反爬）5min缓存 (2026-03-13)
+- [x] manage_holdings / manage_watchlist — 持仓管理（带买入价）+ 自选股管理（SQLite）(2026-03-13)
 - [ ] 产业链图谱 v1（新能源/AI/消费核心链硬编码）
 - [ ] 雪球数据源（备用，实时数据更快）
 
