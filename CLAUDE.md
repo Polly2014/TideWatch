@@ -95,7 +95,11 @@ TideWatch-MCP-Server/
 ### Phase 4: 触达层
 - [x] Azure VM 远程部署代码准备（FastMCP HTTP 双模式 + API Key 认证 + Nginx + systemd）(2026-03-12)
 - [x] Azure VM 实际部署（`tidewatch.polly.wang/mcp`，Cloudflare DNS + Let's Encrypt SSL）(2026-03-12)
-- [ ] Web Dashboard（Next.js 前端 + REST API）
+- [ ] Web Dashboard — 单 HTML 文件放 `static/tidewatch.html`，参考 chat_observatory.html 模式：
+  - 前端直接 fetch MCP JSON-RPC（`mcpCall('scan_market')` 等），不需要额外 REST 端点
+  - 持仓（浮盈/浮亏）+ 自选 + 热门三级展示
+  - 点击个股 → 调 `analyze_stock` 展示详情 + 冲突检测 + 叙事
+  - 顶部：持仓总浮盈 | 看多/看空比 | 市场体制 | 信号胜率
 - [ ] 实时推送（自选股监控 + 信号变化通知）
 
 ## Deployment
