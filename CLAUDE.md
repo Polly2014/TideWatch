@@ -84,7 +84,8 @@ TideWatch-MCP-Server/
 
 ### Phase 3: 深度进化
 - [x] LLM 叙事润色（CopilotX API + Claude Sonnet 4，失败 fallback 模板叙事）(2026-03-12)
-- [ ] scan_market v2 — 板块扫描模式（绕过 push2 反爬：行业板块列表 → 成分股 → 批量K线+技术评分）
+- [ ] scan_market v2 — 三级股票池扫描（持仓+自选+热门80只，并发K线+技术评分，绕过 push2 反爬）
+- [ ] manage_holdings / manage_watchlist — 持仓管理（带买入价）+ 自选股管理（SQLite）
 - [ ] 产业链图谱 v1（新能源/AI/消费核心链硬编码）
 - [ ] 雪球数据源（备用，实时数据更快）
 

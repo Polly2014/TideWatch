@@ -47,6 +47,11 @@ from .data import MarketData
 from .guardrails import check_guardrails
 from .llm import polish_narrative
 from .narrative import NarrativeGenerator
+from .portfolio import (
+    add_holding, remove_holding, get_holdings,
+    add_watchlist, remove_watchlist, get_watchlist,
+    get_scan_pool, HOT_POOL,
+)
 from .regime import RegimeDetector
 from .technical import TechnicalAnalyzer
 from .tracker import record_signal, get_recent_signals, get_signal_stats, update_outcomes
@@ -611,48 +616,122 @@ async def update_signal_outcomes():
 
 
 @mcp.tool()
-async def scan_market(top_n: int = 10):
+async def manage_holdings(
+    action: str,
+    symbol: str = "",
+    cost: float = 0,
+    shares: int = 0,
+):
     """
-    全市场扫描 — 找出今日最强和最弱的股票
-
-    从全市场 A 股中，按涨跌幅和量比初筛，然后对候选股做技术分析评分，
-    输出技术面最强的 Top N 和最弱的 Bottom N。
-
-    适合用来发现今天的热点和异动，找到值得深入分析的标的。
+    持仓管理 — 添加、移除、查看持仓
 
     Args:
-        top_n: 返回最强/最弱各多少只（默认10）
+        action: 操作类型 ("add" / "remove" / "list")
+        symbol: 股票代码（add/remove 时必填）
+        cost: 买入成本价（add 时填写）
+        shares: 持仓数量（add 时填写）
 
     Returns:
-        强势股 Top N + 弱势股 Bottom N，按技术评分排序
+        操作结果和当前持仓列表
     """
-    logger.info(f"🔍 全市场扫描: Top/Bottom {top_n}")
+    if action == "list":
+        holdings = get_holdings()
+        return {
+            "holdings": holdings,
+            "count": len(holdings),
+            "message": f"当前持仓 {len(holdings)} 只" if holdings else "暂无持仓",
+        }
+    elif action == "add":
+        if not symbol:
+            return {"error": "请提供股票代码"}
+        name = market_data.get_stock_name(symbol)
+        add_holding(symbol, name=name, cost=cost, shares=shares)
+        return {
+            "message": f"✅ 已添加持仓: {symbol} {name}" + (f" 成本{cost} ×{shares}股" if cost else ""),
+            "holdings": get_holdings(),
+        }
+    elif action == "remove":
+        if not symbol:
+            return {"error": "请提供股票代码"}
+        remove_holding(symbol)
+        return {
+            "message": f"✅ 已移除持仓: {symbol}",
+            "holdings": get_holdings(),
+        }
+    else:
+        return {"error": f"未知操作: {action}，请用 add/remove/list"}
+
+
+@mcp.tool()
+async def manage_watchlist(
+    action: str,
+    symbol: str = "",
+    reason: str = "",
+):
+    """
+    自选股管理 — 添加、移除、查看自选
+
+    Args:
+        action: 操作类型 ("add" / "remove" / "list")
+        symbol: 股票代码（add/remove 时必填）
+        reason: 关注原因（add 时可选，如 "底部放量" "等回调"）
+
+    Returns:
+        操作结果和当前自选列表
+    """
+    if action == "list":
+        watchlist = get_watchlist()
+        return {
+            "watchlist": watchlist,
+            "count": len(watchlist),
+            "message": f"当前自选 {len(watchlist)} 只" if watchlist else "暂无自选股",
+        }
+    elif action == "add":
+        if not symbol:
+            return {"error": "请提供股票代码"}
+        name = market_data.get_stock_name(symbol)
+        add_watchlist(symbol, name=name, reason=reason)
+        return {
+            "message": f"✅ 已添加自选: {symbol} {name}" + (f" ({reason})" if reason else ""),
+            "watchlist": get_watchlist(),
+        }
+    elif action == "remove":
+        if not symbol:
+            return {"error": "请提供股票代码"}
+        remove_watchlist(symbol)
+        return {
+            "message": f"✅ 已移除自选: {symbol}",
+            "watchlist": get_watchlist(),
+        }
+    else:
+        return {"error": f"未知操作: {action}，请用 add/remove/list"}
+
+
+@mcp.tool()
+async def scan_market(top_n: int = 10):
+    """
+    三级股票池扫描 — 持仓 + 自选 + 热门，按技术评分排序
+
+    从三级股票池（持仓 > 自选 > 热门80只）批量拉K线做技术分析评分，
+    持仓显示浮盈浮亏，所有股票按评分排序。
+
+    不依赖全市场实时行情接口（push2 反爬），使用日K线接口。
+
+    Args:
+        top_n: 热门池中返回最强/最弱各多少只（默认10）
+
+    Returns:
+        持仓全部 + 自选全部 + 热门 Top/Bottom N，按评分排序
+    """
+    import concurrent.futures
+
+    logger.info(f"🔍 三级股票池扫描: Top/Bottom {top_n}")
     server_stats["scans_completed"] += 1
 
-    # 1. 获取全市场实时数据
-    df = market_data._get_spot_cache()
-    if df.empty or "代码" not in df.columns:
-        return {"error": "全市场数据获取失败，请稍后重试"}
+    pool = get_scan_pool()
+    holdings_info = {h["symbol"]: h for h in get_holdings()}
 
-    # 过滤：排除 ST、停牌、新股（上市不足20天用涨跌幅判断）
-    filtered = df.copy()
-    if "名称" in filtered.columns:
-        filtered = filtered[~filtered["名称"].str.contains("ST|退", na=False)]
-    if "最新价" in filtered.columns:
-        filtered = filtered[filtered["最新价"] > 0]  # 排除停牌
-    if "涨跌幅" in filtered.columns:
-        filtered = filtered[filtered["涨跌幅"].abs() < 20]  # 排除涨跌停（可能数据异常）
-
-    if filtered.empty:
-        return {"error": "过滤后无有效数据"}
-
-    # 2. 初筛：涨幅 Top 30 + 跌幅 Bottom 30
-    by_pct = filtered.sort_values("涨跌幅", ascending=False)
-    candidates_bull = by_pct.head(30)
-    candidates_bear = by_pct.tail(30)
-
-    # 3. 对候选股跑技术分析评分
-    def _score_stock(code):
+    def _score_stock(code: str) -> dict | None:
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
             if daily.empty or len(daily) < 20:
@@ -660,49 +739,79 @@ async def scan_market(top_n: int = 10):
             tech_result = technical.analyze(daily)
             if "error" in tech_result:
                 return None
-            return {
+
+            latest_price = float(daily.iloc[-1]["收盘"]) if "收盘" in daily.columns else 0
+            pct_today = float(daily.iloc[-1].get("涨跌幅", 0)) if len(daily) > 0 else 0
+            name = market_data.get_stock_name(str(code))
+
+            result = {
                 "code": str(code),
-                "name": str(filtered[filtered["代码"] == code]["名称"].iloc[0]) if not filtered[filtered["代码"] == code].empty else str(code),
-                "price": float(by_pct[by_pct["代码"] == code]["最新价"].iloc[0]) if not by_pct[by_pct["代码"] == code].empty else 0,
-                "pct_today": float(by_pct[by_pct["代码"] == code]["涨跌幅"].iloc[0]) if not by_pct[by_pct["代码"] == code].empty else 0,
+                "name": name,
+                "price": latest_price,
+                "pct_today": pct_today,
                 "score": tech_result["trend"]["score"],
                 "signal": tech_result["trend"]["signal"],
-                "volume_ratio": tech_result["volume"]["volume_ratio"],
                 "rsi": tech_result["momentum"]["rsi_14"],
-                "patterns": tech_result["patterns"],
                 "reasons_bull": tech_result["trend"]["reasons_bull"][:3],
                 "reasons_bear": tech_result["trend"]["reasons_bear"][:3],
             }
+
+            # 持仓额外信息
+            if code in holdings_info:
+                h = holdings_info[code]
+                if h.get("cost") and h["cost"] > 0:
+                    result["cost"] = h["cost"]
+                    result["shares"] = h.get("shares", 0)
+                    result["pnl_pct"] = round((latest_price - h["cost"]) / h["cost"] * 100, 2)
+                    result["pnl_amount"] = round((latest_price - h["cost"]) * h.get("shares", 0), 2)
+
+            return result
         except Exception as e:
             logger.debug(f"扫描 {code} 失败: {e}")
             return None
 
-    # 强势候选
-    bull_results = []
-    for code in candidates_bull["代码"].values:
-        result = _score_stock(code)
-        if result:
-            bull_results.append(result)
-        if len(bull_results) >= top_n * 2:  # 多跑一些以备排序
-            break
+    # 并发扫描所有池子
+    all_symbols = pool["holdings"] + pool["watchlist"] + pool["hot"]
+    results = {}
 
-    # 弱势候选
-    bear_results = []
-    for code in candidates_bear["代码"].values:
-        result = _score_stock(code)
-        if result:
-            bear_results.append(result)
-        if len(bear_results) >= top_n * 2:
-            break
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_sym = {executor.submit(_score_stock, sym): sym for sym in all_symbols}
+        for future in concurrent.futures.as_completed(future_to_sym):
+            sym = future_to_sym[future]
+            try:
+                r = future.result()
+                if r:
+                    results[sym] = r
+            except Exception:
+                pass
 
-    # 4. 按评分排序
-    bull_results.sort(key=lambda x: x["score"], reverse=True)
-    bear_results.sort(key=lambda x: x["score"])
+    # 分组输出
+    holding_results = [results[s] for s in pool["holdings"] if s in results]
+    watchlist_results = [results[s] for s in pool["watchlist"] if s in results]
+    hot_results = [results[s] for s in pool["hot"] if s in results]
+
+    # 持仓和自选按评分降序
+    holding_results.sort(key=lambda x: x["score"], reverse=True)
+    watchlist_results.sort(key=lambda x: x["score"], reverse=True)
+
+    # 热门取 Top N / Bottom N
+    hot_results.sort(key=lambda x: x["score"], reverse=True)
+    hot_strongest = hot_results[:top_n]
+    hot_weakest = hot_results[-top_n:] if len(hot_results) > top_n else []
+    hot_weakest.sort(key=lambda x: x["score"])
 
     return {
-        "strongest": bull_results[:top_n],
-        "weakest": bear_results[:top_n],
-        "total_scanned": len(filtered),
+        "holdings": holding_results,
+        "watchlist": watchlist_results,
+        "hot_strongest": hot_strongest,
+        "hot_weakest": hot_weakest,
+        "pool_size": {
+            "holdings": len(pool["holdings"]),
+            "watchlist": len(pool["watchlist"]),
+            "hot": len(pool["hot"]),
+            "total": len(all_symbols),
+            "scanned": len(results),
+        },
         "timestamp": datetime.now().isoformat(),
     }
 
