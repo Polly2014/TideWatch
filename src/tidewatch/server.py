@@ -740,9 +740,12 @@ async def scan_market(top_n: int = 10):
             if "error" in tech_result:
                 return None
 
-            latest_price = float(daily.iloc[-1]["收盘"]) if "收盘" in daily.columns else 0
-            pct_today = float(daily.iloc[-1].get("涨跌幅", 0)) if len(daily) > 0 else 0
-            name = market_data.get_stock_name(str(code))
+            latest_row = daily.iloc[-1]
+            latest_price = float(latest_row.get("close", latest_row.get("收盘", 0)))
+            pct_today = float(latest_row.get("pct_change", latest_row.get("涨跌幅", 0)))
+            # 优先用持仓/自选中存的名称，fallback 到 get_stock_name
+            stored_name = holdings_info.get(code, {}).get("name", "")
+            name = stored_name if stored_name and stored_name != code else market_data.get_stock_name(str(code))
 
             result = {
                 "code": str(code),
