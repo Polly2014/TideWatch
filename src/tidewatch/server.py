@@ -50,7 +50,7 @@ from .narrative import NarrativeGenerator
 from .portfolio import (
     add_holding, remove_holding, get_holdings,
     add_watchlist, remove_watchlist, get_watchlist,
-    get_scan_pool, HOT_POOL,
+    get_scan_pool, HOT_POOL, HOT_NAMES,
 )
 from .regime import RegimeDetector
 from .technical import TechnicalAnalyzer
@@ -116,6 +116,10 @@ server_stats = {
     "scans_completed": 0,
 }
 
+# scan_market 缓存（5分钟内复用上次结果，避免频繁请求被封）
+_scan_cache = {"result": None, "time": 0}
+_SCAN_CACHE_TTL = 300  # 5分钟
+
 
 # ============================================================================
 # MCP Tools
@@ -131,7 +135,7 @@ async def health_check(request):
         "server": "TideWatch-观潮",
         "version": VERSION,
         "transport": "streamable-http",
-        "tools_count": 10,
+        "tools_count": len(mcp._tool_manager._tools) if hasattr(mcp, '_tool_manager') else "?",
         "auth_enabled": MCP_API_KEY_ENABLED,
         "analyses_completed": server_stats["analyses_completed"],
     })
@@ -728,6 +732,12 @@ async def scan_market(top_n: int = 10):
     logger.info(f"🔍 三级股票池扫描: Top/Bottom {top_n}")
     server_stats["scans_completed"] += 1
 
+    # 5分钟缓存：避免频繁请求被 finance.eastmoney.com 封
+    import time as _time
+    if _scan_cache["result"] and (_time.monotonic() - _scan_cache["time"]) < _SCAN_CACHE_TTL:
+        logger.info("⚙️ 使用扫描缓存（%ds内）", int(_SCAN_CACHE_TTL - (_time.monotonic() - _scan_cache["time"])))
+        return _scan_cache["result"]
+
     pool = get_scan_pool()
     holdings_info = {h["symbol"]: h for h in get_holdings()}
 
@@ -743,9 +753,14 @@ async def scan_market(top_n: int = 10):
             latest_row = daily.iloc[-1]
             latest_price = float(latest_row.get("close", latest_row.get("收盘", 0)))
             pct_today = float(latest_row.get("pct_change", latest_row.get("涨跌幅", 0)))
-            # 优先用持仓/自选中存的名称，fallback 到 get_stock_name
+            # 优先用持仓/自选中存的名称，然后查 HOT_NAMES，fallback 到 get_stock_name
             stored_name = holdings_info.get(code, {}).get("name", "")
-            name = stored_name if stored_name and stored_name != code else market_data.get_stock_name(str(code))
+            if stored_name and stored_name != code:
+                name = stored_name
+            elif code in HOT_NAMES:
+                name = HOT_NAMES[code]
+            else:
+                name = market_data.get_stock_name(str(code))
 
             result = {
                 "code": str(code),
@@ -803,9 +818,22 @@ async def scan_market(top_n: int = 10):
     hot_weakest = hot_results[-top_n:] if len(hot_results) > top_n else []
     hot_weakest.sort(key=lambda x: x["score"])
 
-    return {
+    # 持仓额外上下文：技术面弱但仍在盈利区时提示
+    for h in holding_results:
+        if h.get("pnl_pct") is not None and h["pnl_pct"] > 0 and h["score"] < -10:
+            h["context"] = "技术面弱但仍在盈利区，可考虑设置移动止盈"
+        elif h.get("pnl_pct") is not None and h["pnl_pct"] < -5 and h["score"] < -20:
+            h["context"] = "技术面+亏损双重压力，关注止损位"
+
+    # 自选为空时加引导提示
+    watchlist_hint = ""
+    if not watchlist_results and not pool["watchlist"]:
+        watchlist_hint = "自选池为空，用 manage_watchlist(action='add', symbol='xxx') 添加关注股票"
+
+    scan_result = {
         "holdings": holding_results,
         "watchlist": watchlist_results,
+        "watchlist_hint": watchlist_hint,
         "hot_strongest": hot_strongest,
         "hot_weakest": hot_weakest,
         "pool_size": {
@@ -817,6 +845,12 @@ async def scan_market(top_n: int = 10):
         },
         "timestamp": datetime.now().isoformat(),
     }
+
+    # 缓存结果
+    _scan_cache["result"] = scan_result
+    _scan_cache["time"] = _time.monotonic()
+
+    return scan_result
 
 
 # ============================================================================
