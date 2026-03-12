@@ -10,7 +10,7 @@ WorkingDirectory=/home/azureuser/GitHub_Workspace/TideWatch-MCP-Server
 ExecStart=/home/azureuser/.local/bin/poetry run tidewatch --http --port 8889
 Restart=always
 RestartSec=5
-Environment=PATH=/home/azureuser/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/home/azureuser/miniforge3/bin:/home/azureuser/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 # Logging
 StandardOutput=append:/home/azureuser/GitHub_Workspace/TideWatch-MCP-Server/data/tidewatch-service.log
