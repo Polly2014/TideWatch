@@ -298,6 +298,7 @@ async def analyze_stock(
 
 
 def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm):
+    t0 = _time.monotonic()
 
     # ETF 检测（纯前缀判断，无网络请求）
     is_etf = market_data._is_etf(symbol)
@@ -312,6 +313,8 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
 
     # 1. 日K线（核心数据源，必须成功）
     df = f_daily.result()
+    t1 = _time.monotonic()
+    logger.info(f"⏱️ {symbol} 数据拉取: {t1-t0:.1f}s")
     if df.empty:
         return {"error": f"无法获取 {symbol} 的行情数据"}
 
@@ -350,6 +353,9 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
 
     # 5. 消息面（已并发拉取）
     news = f_news.result() if f_news else []
+
+    t2 = _time.monotonic()
+    logger.info(f"⏱️ {symbol} 分析+体制+资金+新闻: {t2-t1:.1f}s (总 {t2-t0:.1f}s)")
 
     # 6. 冲突检测
     conflicts = _detect_conflicts(tech, money, regime_result)
@@ -442,6 +448,9 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
         report["signal"]["tracked_id"] = signal_id
     except Exception as e:
         logger.warning(f"信号记录失败: {e}")
+
+    t3 = _time.monotonic()
+    logger.info(f"⏱️ {symbol} 分析完成: 总耗时 {t3-t0:.1f}s (数据{t1-t0:.1f}s + 分析{t2-t1:.1f}s + 其他{t3-t2:.1f}s)")
 
     return report
 
