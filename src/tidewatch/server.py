@@ -1053,20 +1053,18 @@ async def scan_market(top_n: int = 10):
             logger.debug(f"扫描 {code} 失败: {e}")
             return None
 
-    # 并发扫描所有池子
+    # 串行扫描（baostock 单连接 + 每只yield锁给 analyze_stock）
     all_symbols = pool["holdings"] + pool["watchlist"] + pool["hot"]
     results = {}
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_sym = {executor.submit(_score_stock, sym): sym for sym in all_symbols}
-        for future in concurrent.futures.as_completed(future_to_sym):
-            sym = future_to_sym[future]
-            try:
-                r = future.result()
-                if r:
-                    results[sym] = r
-            except Exception:
-                pass
+    for sym in all_symbols:
+        try:
+            r = _score_stock(sym)
+            if r:
+                results[sym] = r
+        except Exception:
+            pass
+        _time.sleep(0.05)  # 让出锁给 analyze_stock 请求
 
     # 分组输出
     holding_results = [results[s] for s in pool["holdings"] if s in results]
