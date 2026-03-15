@@ -138,26 +138,24 @@ class MarketData:
                 df = df.dropna(subset=["close"]).sort_values("date").tail(days).reset_index(drop=True)
                 return df
         except Exception as e:
-            logger.warning(f"baostock {symbol} 失败, fallback AKShare: {e}")
+            logger.warning(f"baostock {symbol} 异常: {e}")
 
-        # AKShare fallback
-        end_str = datetime.now().strftime("%Y%m%d")
-        start_str = (datetime.now() - timedelta(days=days * 2)).strftime("%Y%m%d")
-        try:
-            if self._is_etf(symbol):
+        # AKShare fallback（仅在 baostock 完全不可用时才尝试，如 ETF 特殊代码）
+        if self._is_etf(symbol):
+            end_str = datetime.now().strftime("%Y%m%d")
+            start_str = (datetime.now() - timedelta(days=days * 2)).strftime("%Y%m%d")
+            try:
                 df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date=start_str, end_date=end_str, adjust=adjust)
-            else:
-                df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_str, end_date=end_str, adjust=adjust)
-            df = df.rename(columns={
-                "日期": "date", "开盘": "open", "收盘": "close", "最高": "high",
-                "最低": "low", "成交量": "volume", "涨跌幅": "pct_change",
-            })
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date").tail(days).reset_index(drop=True)
-            return df
-        except Exception as e:
-            logger.error(f"获取 {symbol} 日K线失败 (baostock+AKShare): {e}")
-            return pd.DataFrame()
+                df = df.rename(columns={
+                    "日期": "date", "开盘": "open", "收盘": "close", "最高": "high",
+                    "最低": "low", "成交量": "volume", "涨跌幅": "pct_change",
+                })
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.sort_values("date").tail(days).reset_index(drop=True)
+                return df
+            except Exception as e:
+                logger.error(f"获取 ETF {symbol} 日K线失败: {e}")
+        return pd.DataFrame()
 
     def get_stock_realtime(self, symbol: str) -> dict:
         """
