@@ -17,25 +17,32 @@ logger = logging.getLogger(__name__)
 
 # baostock 全局连接管理
 _bs_logged_in = False
+_bs_login_time = 0
+_BS_SESSION_TTL = 30  # 每 30 秒重新登录保持连接新鲜
 
 
 def _bs_login():
-    """确保 baostock 已登录（全局单连接）"""
-    global _bs_logged_in
-    if not _bs_logged_in:
-        import io, sys
-        # baostock login() prints to stdout, suppress it
-        old_stdout = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            lg = bs.login()
-        finally:
-            sys.stdout = old_stdout
-        if lg.error_code == "0":
-            _bs_logged_in = True
-            logger.info("baostock 登录成功")
-        else:
-            logger.error(f"baostock 登录失败: {lg.error_msg}")
+    """确保 baostock 已登录（超过 30s 自动重连）"""
+    global _bs_logged_in, _bs_login_time
+    now = time.time()
+    if _bs_logged_in and (now - _bs_login_time) < _BS_SESSION_TTL:
+        return  # 连接还新鲜
+
+    import io, sys
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        if _bs_logged_in:
+            bs.logout()
+        lg = bs.login()
+    finally:
+        sys.stdout = old_stdout
+    if lg.error_code == "0":
+        _bs_logged_in = True
+        _bs_login_time = now
+    else:
+        _bs_logged_in = False
+        logger.error(f"baostock 登录失败: {lg.error_msg}")
 
 
 def _to_bs_code(symbol: str) -> str:
@@ -125,10 +132,7 @@ class MarketData:
                 rows.append(rs.get_row_data())
 
             if not rows:
-                # baostock 连接可能断了，重置登录状态
-                global _bs_logged_in
-                _bs_logged_in = False
-                logger.debug(f"baostock {symbol} 返回 0 rows, 重置连接")
+                logger.debug(f"baostock {symbol}: 0 rows (可能停牌/退市)")
 
             if rows:
                 df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change"])
