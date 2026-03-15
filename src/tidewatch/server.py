@@ -442,7 +442,9 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
         if cost and cost > 0 and shares > 0:
             pnl_pct = round((price - cost) / cost * 100, 2)
             pnl_amt = round((price - cost) * shares, 0)
-            portfolio_ctx = f"用户持仓: {shares}股，成本价¥{cost:.2f}，当前浮{'\u76c8' if pnl_pct >= 0 else '\u4e8f'}{abs(pnl_pct):.1f}%（{'+'if pnl_amt>=0 else ''}{pnl_amt:.0f}元）"
+            lots = shares // 100  # A股1手=100股
+            lot_note = f"（仅{lots}手，已是最小持仓单位，无法减半）" if lots <= 1 else f"（{lots}手）"
+            portfolio_ctx = f"用户持仓: {shares}股{lot_note}，成本价¥{cost:.2f}，当前浮{'\u76c8' if pnl_pct >= 0 else '\u4e8f'}{abs(pnl_pct):.1f}%（{'+'if pnl_amt>=0 else ''}{pnl_amt:.0f}元）"
         else:
             portfolio_ctx = f"用户持仓: {shares}股"
     elif _watching:
