@@ -42,9 +42,6 @@ import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-import baostock as bs
-import pandas as pd
-
 # 北京时间 UTC+8
 _BJ_TZ = timezone(timedelta(hours=8))
 
@@ -181,45 +178,9 @@ def _run_scan_warmup():
     from .technical import TechnicalAnalyzer
     tech_analyzer = TechnicalAnalyzer()
 
-    # 预热用独立的 baostock session，不和主查询抢锁
-    import io, sys
-    old_stdout = sys.stdout
-    sys.stdout = io.StringIO()
-    try:
-        bs.logout()
-        bs.login()
-    except Exception:
-        pass
-    finally:
-        sys.stdout = old_stdout
-
-    def _bs_query_direct(code, days=60):
-        """预热专用：直接查 baostock，不走 _bs_lock"""
-        try:
-            prefix = "sh" if code.startswith(("6", "5")) else "sz"
-            bs_code = f"{prefix}.{code}"
-            start = (_now_bj() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
-            end = _now_bj().strftime("%Y-%m-%d")
-            rs = bs.query_history_k_data_plus(
-                bs_code, "date,open,high,low,close,volume,pctChg",
-                start_date=start, end_date=end, frequency="d", adjustflag="2",
-            )
-            rows = []
-            while (rs.error_code == "0") and rs.next():
-                rows.append(rs.get_row_data())
-            if not rows:
-                return pd.DataFrame()
-            df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change"])
-            for col in ["open", "high", "low", "close", "volume", "pct_change"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-            df["date"] = pd.to_datetime(df["date"])
-            return df.dropna(subset=["close"]).sort_values("date").tail(days).reset_index(drop=True)
-        except Exception:
-            return pd.DataFrame()
-
     def _score_one(code):
         try:
-            daily = _bs_query_direct(str(code), days=60)
+            daily = market_data.get_stock_daily(str(code), days=60)
             if daily.empty:
                 return None
             tech_result = tech_analyzer.analyze(daily)
@@ -269,6 +230,7 @@ def _run_scan_warmup():
                 results[sym] = r
         except Exception:
             pass
+        _time.sleep(0.05)  # 让出锁给 analyze_stock 请求
 
     holding_results = [results[s] for s in pool["holdings"] if s in results]
     watchlist_results = [results[s] for s in pool["watchlist"] if s in results]
