@@ -125,7 +125,10 @@ class MarketData:
                 rows.append(rs.get_row_data())
 
             if not rows:
-                logger.debug(f"baostock {symbol} 返回 0 rows (error={rs.error_code} msg={rs.error_msg})")
+                # baostock 连接可能断了，重置登录状态
+                global _bs_logged_in
+                _bs_logged_in = False
+                logger.debug(f"baostock {symbol} 返回 0 rows, 重置连接")
 
             if rows:
                 df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "pct_change"])
