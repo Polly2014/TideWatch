@@ -250,6 +250,36 @@ def _run_scan_warmup():
     _scan_cache["result"] = scan_result
     _scan_cache["time"] = _time.monotonic()
 
+    # 持久化到磁盘（重启后可恢复）
+    if len(results) > 0:
+        try:
+            import json
+            cache_path = Path(__file__).parent.parent.parent / "data" / "scan_cache.json"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(scan_result, ensure_ascii=False, default=str))
+            logger.info(f"💾 扫描缓存已持久化: {len(results)} 只股票")
+        except Exception as e:
+            logger.debug(f"缓存持久化失败: {e}")
+
+
+def _load_disk_cache():
+    """启动时从磁盘恢复上次扫描缓存"""
+    try:
+        import json
+        cache_path = Path(__file__).parent.parent.parent / "data" / "scan_cache.json"
+        if cache_path.exists():
+            data = json.loads(cache_path.read_text())
+            _scan_cache["result"] = data
+            _scan_cache["time"] = _time.monotonic()  # 标记为刚缓存
+            logger.info(f"💾 从磁盘恢复扫描缓存: {data.get('pool_size', {}).get('scanned', '?')} 只股票")
+            return True
+    except Exception as e:
+        logger.debug(f"磁盘缓存恢复失败: {e}")
+    return False
+
+# 启动时先尝试从磁盘恢复缓存
+_load_disk_cache()
+
 # 启动后台预热线程（daemon=True 跟随主进程退出）
 _warmup_thread = threading.Thread(target=_warmup_loop, daemon=True)
 _warmup_thread.start()
