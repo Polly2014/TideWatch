@@ -178,6 +178,15 @@ def _run_scan_warmup():
     from .technical import TechnicalAnalyzer
     tech_analyzer = TechnicalAnalyzer()
 
+    # 先拉一次体制，所有股票共用（避免重复拉指数）
+    try:
+        index_df = market_data.get_index_daily("000001", days=120)
+        regime_result = regime_detector.detect(index_df)
+        regime_adj = regime_detector.get_regime_adjustment(regime_result["regime"])
+        regime_bias = regime_adj["signal_bias"]
+    except Exception:
+        regime_bias = 0
+
     def _score_one(code):
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
@@ -197,11 +206,20 @@ def _run_scan_warmup():
                 name = HOT_NAMES[code]
             else:
                 name = market_data.get_stock_name(str(code))
+            raw_score = tech_result["trend"]["score"]
+            adjusted = max(-100, min(100, raw_score + regime_bias))
+            # 信号基于 adjusted_score
+            if adjusted >= 25: sig = "看多"
+            elif adjusted >= 8: sig = "偏多"
+            elif adjusted <= -25: sig = "看空"
+            elif adjusted <= -8: sig = "偏空"
+            else: sig = "中性观望"
+
             result = {
                 "code": str(code), "name": name,
                 "price": latest_price, "pct_today": pct_today,
-                "score": tech_result["trend"]["score"],
-                "signal": tech_result["trend"]["signal"],
+                "score": adjusted,
+                "signal": sig,
                 "rsi": tech_result["momentum"]["rsi_14"],
                 "reasons_bull": tech_result["trend"]["reasons_bull"][:3],
                 "reasons_bear": tech_result["trend"]["reasons_bear"][:3],
@@ -940,6 +958,15 @@ async def scan_market(top_n: int = 10):
     pool = get_scan_pool()
     holdings_info = {h["symbol"]: h for h in get_holdings()}
 
+    # 拉一次体制调整，所有股票共用
+    try:
+        index_df = market_data.get_index_daily("000001", days=120)
+        _regime = regime_detector.detect(index_df)
+        _regime_adj = regime_detector.get_regime_adjustment(_regime["regime"])
+        _regime_bias = _regime_adj["signal_bias"]
+    except Exception:
+        _regime_bias = 0
+
     def _score_stock(code: str) -> dict | None:
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
@@ -961,13 +988,21 @@ async def scan_market(top_n: int = 10):
             else:
                 name = market_data.get_stock_name(str(code))
 
+            raw_score = tech_result["trend"]["score"]
+            adj_score = max(-100, min(100, raw_score + _regime_bias))
+            if adj_score >= 25: adj_signal = "看多"
+            elif adj_score >= 8: adj_signal = "偏多"
+            elif adj_score <= -25: adj_signal = "看空"
+            elif adj_score <= -8: adj_signal = "偏空"
+            else: adj_signal = "中性观望"
+
             result = {
                 "code": str(code),
                 "name": name,
                 "price": latest_price,
                 "pct_today": pct_today,
-                "score": tech_result["trend"]["score"],
-                "signal": tech_result["trend"]["signal"],
+                "score": adj_score,
+                "signal": adj_signal,
                 "rsi": tech_result["momentum"]["rsi_14"],
                 "reasons_bull": tech_result["trend"]["reasons_bull"][:3],
                 "reasons_bear": tech_result["trend"]["reasons_bear"][:3],
