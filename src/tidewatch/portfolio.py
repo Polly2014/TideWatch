@@ -141,6 +141,13 @@ def _get_conn() -> sqlite3.Connection:
             added_at TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS account_info (
+            key TEXT PRIMARY KEY,
+            value REAL NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     return conn
 
@@ -174,6 +181,39 @@ def get_holdings() -> list[dict]:
     rows = conn.execute("SELECT * FROM holdings ORDER BY added_at").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# --- 账户资金 ---
+
+def set_account_info(cash: float, total_assets: float = 0):
+    """更新账户资金信息"""
+    conn = _get_conn()
+    now = datetime.now().isoformat()
+    conn.execute(
+        "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
+        ("cash", cash, now),
+    )
+    if total_assets > 0:
+        conn.execute(
+            "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
+            ("total_assets", total_assets, now),
+        )
+    conn.commit()
+    conn.close()
+    logger.info(f"💰 账户更新: 可用={cash}, 总资产={total_assets}")
+
+
+def get_account_info() -> dict:
+    """获取账户资金信息"""
+    conn = _get_conn()
+    rows = conn.execute("SELECT key, value, updated_at FROM account_info").fetchall()
+    conn.close()
+    info = {r["key"]: {"value": r["value"], "updated_at": r["updated_at"]} for r in rows}
+    return {
+        "cash": info.get("cash", {}).get("value", 0),
+        "total_assets": info.get("total_assets", {}).get("value", 0),
+        "updated_at": info.get("cash", {}).get("updated_at", ""),
+    }
 
 
 # --- 自选 ---

@@ -60,6 +60,7 @@ from .narrative import NarrativeGenerator
 from .portfolio import (
     add_holding, remove_holding, get_holdings,
     add_watchlist, remove_watchlist, get_watchlist,
+    set_account_info, get_account_info,
     get_scan_pool, HOT_POOL, HOT_NAMES,
 )
 from .regime import RegimeDetector
@@ -261,6 +262,7 @@ def _run_scan_warmup():
         "_hot_sorted": hot_sorted,
         "hot_strongest": hot_sorted[:10],
         "hot_weakest": sorted(hot_sorted[-10:], key=lambda x: x["score"]) if len(hot_sorted) > 10 else [],
+        "account": get_account_info(),
         "pool_size": {"total": len(all_symbols), "scanned": len(results)},
         "timestamp": _now_bj().isoformat(),
     }
@@ -951,6 +953,46 @@ async def manage_watchlist(
 
 
 @mcp.tool()
+async def manage_account(
+    action: str,
+    cash: float = 0,
+    total_assets: float = 0,
+):
+    """
+    账户资金管理 — 更新或查看账户资金信息
+
+    用于记录真实账户的可用资金和总资产，以便 AI 分析时了解仓位空间。
+
+    Args:
+        action: 操作类型 ("update" / "view")
+        cash: 可用资金（update 时填写）
+        total_assets: 总资产（update 时填写，0 则不更新）
+
+    Returns:
+        账户资金摘要 + 持仓概览
+    """
+    if action == "view":
+        account = get_account_info()
+        holdings = get_holdings()
+        return {
+            "account": account,
+            "holdings_count": len(holdings),
+            "message": f"可用资金 ¥{account['cash']:,.2f} | 总资产 ¥{account['total_assets']:,.2f}" if account["cash"] else "暂未设置账户信息",
+        }
+    elif action == "update":
+        if cash <= 0 and total_assets <= 0:
+            return {"error": "请提供 cash（可用资金）或 total_assets（总资产）"}
+        set_account_info(cash=cash, total_assets=total_assets)
+        account = get_account_info()
+        return {
+            "message": f"✅ 账户已更新: 可用 ¥{account['cash']:,.2f} | 总资产 ¥{account['total_assets']:,.2f}",
+            "account": account,
+        }
+    else:
+        return {"error": f"未知操作: {action}，请用 update/view"}
+
+
+@mcp.tool()
 async def scan_market(top_n: int = 10):
     """
     三级股票池扫描 — 持仓 + 自选 + 热门，按技术评分排序
@@ -1106,6 +1148,7 @@ def _scan_market_sync(top_n: int):
         "hot_strongest": hot_strongest,
         "hot_weakest": hot_weakest,
         "_hot_sorted": hot_results,  # 完整列表用于缓存切片
+        "account": get_account_info(),
         "pool_size": {
             "holdings": len(pool["holdings"]),
             "watchlist": len(pool["watchlist"]),
