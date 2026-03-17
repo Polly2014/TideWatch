@@ -189,10 +189,11 @@ def set_account_info(cash: float, total_assets: float = 0, market_value: float =
     """更新账户资金信息"""
     conn = _get_conn()
     now = datetime.now().isoformat()
-    conn.execute(
-        "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
-        ("cash", cash, now),
-    )
+    if cash > 0:
+        conn.execute(
+            "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
+            ("cash", cash, now),
+        )
     if total_assets > 0:
         conn.execute(
             "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
