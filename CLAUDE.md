@@ -62,6 +62,7 @@ TideWatch-MCP-Server/
 | `scan_market` | 三级股票池扫描（持仓+自选+热饰70只，串行K线+技术评分）5min缓存，asyncio.to_thread 不阻塞事件循环 |
 | `manage_holdings` | 持仓管理（添加/移除/查看，带买入价和数量）|
 | `manage_watchlist` | 自选股管理（添加/移除/查看，可备注关注原因）|
+| `manage_account` | 账户资金管理（可用资金/总资产/持仓市值）|
 | `server_status` | 服务器状态 |
 
 ## Design Principles

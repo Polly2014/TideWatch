@@ -455,6 +455,11 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     else:
         portfolio_ctx = "用户未持仓，仅在浏览"
 
+    # 追加可用资金上下文
+    _acct = get_account_info()
+    if _acct["cash"] > 0:
+        portfolio_ctx += f"\n账户可用资金: ¥{_acct['cash']:,.2f}，总资产: ¥{_acct['total_assets']:,.2f}"
+
     report = {
         "stock": {
             "code": symbol,
@@ -957,16 +962,18 @@ async def manage_account(
     action: str,
     cash: float = 0,
     total_assets: float = 0,
+    market_value: float = 0,
 ):
     """
     账户资金管理 — 更新或查看账户资金信息
 
-    用于记录真实账户的可用资金和总资产，以便 AI 分析时了解仓位空间。
+    用于记录真实账户的可用资金、总资产和持仓市值，以便 AI 分析时了解仓位空间。
 
     Args:
         action: 操作类型 ("update" / "view")
         cash: 可用资金（update 时填写）
         total_assets: 总资产（update 时填写，0 则不更新）
+        market_value: 持仓市值（update 时填写，0 则不更新）
 
     Returns:
         账户资金摘要 + 持仓概览
@@ -982,10 +989,10 @@ async def manage_account(
     elif action == "update":
         if cash <= 0 and total_assets <= 0:
             return {"error": "请提供 cash（可用资金）或 total_assets（总资产）"}
-        set_account_info(cash=cash, total_assets=total_assets)
+        set_account_info(cash=cash, total_assets=total_assets, market_value=market_value)
         account = get_account_info()
         return {
-            "message": f"✅ 账户已更新: 可用 ¥{account['cash']:,.2f} | 总资产 ¥{account['total_assets']:,.2f}",
+            "message": f"✅ 账户已更新: 可用 ¥{account['cash']:,.2f} | 总资产 ¥{account['total_assets']:,.2f} | 市值 ¥{account['market_value']:,.2f}",
             "account": account,
         }
     else:

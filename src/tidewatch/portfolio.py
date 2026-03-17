@@ -185,7 +185,7 @@ def get_holdings() -> list[dict]:
 
 # --- 账户资金 ---
 
-def set_account_info(cash: float, total_assets: float = 0):
+def set_account_info(cash: float, total_assets: float = 0, market_value: float = 0):
     """更新账户资金信息"""
     conn = _get_conn()
     now = datetime.now().isoformat()
@@ -198,9 +198,14 @@ def set_account_info(cash: float, total_assets: float = 0):
             "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
             ("total_assets", total_assets, now),
         )
+    if market_value > 0:
+        conn.execute(
+            "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
+            ("market_value", market_value, now),
+        )
     conn.commit()
     conn.close()
-    logger.info(f"💰 账户更新: 可用={cash}, 总资产={total_assets}")
+    logger.info(f"💰 账户更新: 可用={cash}, 总资产={total_assets}, 市值={market_value}")
 
 
 def get_account_info() -> dict:
@@ -212,6 +217,7 @@ def get_account_info() -> dict:
     return {
         "cash": info.get("cash", {}).get("value", 0),
         "total_assets": info.get("total_assets", {}).get("value", 0),
+        "market_value": info.get("market_value", {}).get("value", 0),
         "updated_at": info.get("cash", {}).get("updated_at", ""),
     }
 
