@@ -25,7 +25,7 @@ TideWatch-MCP-Server/
 ├── src/
 │   └── tidewatch/          # Python 包 (import tidewatch.xxx)
 │       ├── __init__.py
-│       ├── server.py       # ⭐ MCP 主入口 (FastMCP + stdio/HTTP 双模式, 13 工具)
+│       ├── server.py       # ⭐ MCP 主入口 (FastMCP + stdio/HTTP 双模式, 14 工具)
 │       ├── data.py         # 数据层 (baostock 日K线 + AKShare 资金/新闻)
 │       ├── technical.py    # 技术分析引擎
 │       ├── regime.py       # 市场体制识别
@@ -33,7 +33,7 @@ TideWatch-MCP-Server/
 │       ├── llm.py          # LLM 叙事润色 (CopilotX + Claude Sonnet 4)
 │       ├── tracker.py      # 信号追踪系统 (SQLite, 5min去重)
 │       ├── guardrails.py   # 行为护栏 (Anti-FOMO, 3条规则)
-│       └── portfolio.py    # 三级股票池 (持仓+自选+热饰70只)
+│       └── portfolio.py    # 三级股票池 (持仓+自选+热门24只)
 ├── config/                 # 部署配置
 │   ├── nginx_tidewatch.polly.wang.conf  # Nginx 反向代理
 │   └── mcp_remote.example.json         # 客户端配置示例
@@ -44,7 +44,7 @@ TideWatch-MCP-Server/
     └── signals.db          # 信号追踪数据库
 ```
 
-注意：Phase 3 已完成 LLM 叙事润色 + 三级股票池 + 持仓自选管理。产业链图谱和雪球数据源等积累足够信号数据后再开工。Dashboard 本地维护（`static/tidewatch.html`），不走 git push。
+注意：Phase 1-4 全部完成。当前进入 Phase 5（信号验证 + 主动触达）。Dashboard 本地维护（`static/tidewatch.html`），不走 git push。HOT_POOL 已从 76 只精简至 24 只（8板块×3龙头），扫描耗时从 ~22s 降至 ~4.25s。
 
 ## MCP Tools
 
@@ -59,7 +59,7 @@ TideWatch-MCP-Server/
 | `polish_narrative_llm` | LLM 叙事润色（配合 skip_llm 渐进加载用）|
 | `review_signals` | 查看历史信号和胜率统计 |
 | `update_signal_outcomes` | 回填历史信号实际走势 |
-| `scan_market` | 三级股票池扫描（持仓+自选+热饰70只，串行K线+技术评分）5min缓存，asyncio.to_thread 不阻塞事件循环 |
+| `scan_market` | 三级股票池扫描（持仓+自选+热门24只，串行K线+技术评分）5min缓存，asyncio.to_thread 不阻塞事件循环 |
 | `manage_holdings` | 持仓管理（添加/移除/查看，带买入价和数量）|
 | `manage_watchlist` | 自选股管理（添加/移除/查看，可备注关注原因）|
 | `manage_account` | 账户资金管理（可用资金/总资产/持仓市值）|
@@ -87,14 +87,14 @@ TideWatch-MCP-Server/
 - [x] 行为护栏 v1（追高检测 / 分析频次提醒 / 连续看空检测）
 - [x] scan_market 工具（全市场扫描 Top/Bottom N 强弱股）
 
-### Phase 3: 深度进化
+### Phase 3: ✅ 深度进化 (2026-03-13)
 - [x] LLM 叙事润色（CopilotX API + Claude Sonnet 4，失败 fallback 模板叙事）(2026-03-12)
-- [x] scan_market v2 — 三级股票池扫描（持仓+自选+热饰70只，并发K线+技术评分，绕过 push2 反爬）5min缓存 (2026-03-13)
+- [x] scan_market v2 — 三级股票池扫描（持仓+自选+热门24只，串行K线+技术评分，绕过 push2 反爬）5min缓存 (2026-03-13)
 - [x] manage_holdings / manage_watchlist — 持仓管理（带买入价）+ 自选股管理（SQLite）(2026-03-13)
-- [ ] 产业链图谱 v1（新能源/AI/消费核心链硬编码）
-- [ ] 雪球数据源（备用，实时数据更快）
+- [x] manage_account — 账户资金管理（可用资金/总资产/持仓市值）(2026-03-18)
+- [x] HOT_POOL 瘦身 76→24 只（8板块×3龙头），扫描 ~22s→~4.25s (2026-03-18)
 
-### Phase 4: 触达层
+### Phase 4: ✅ 触达层 (2026-03-13)
 - [x] Azure VM 远程部署代码准备（FastMCP HTTP 双模式 + API Key 认证 + Nginx + systemd）(2026-03-12)
 - [x] Azure VM 实际部署（`tidewatch.polly.wang/mcp`，Cloudflare DNS + Let's Encrypt SSL）(2026-03-12)
 - [x] Web Dashboard 主体 — `static/tidewatch.html` 本地维护 (2026-03-13):
@@ -113,8 +113,21 @@ TideWatch-MCP-Server/
   - 休盘缓存：`isMarketOpen()` 判断，休盘期间 0ms 秒开
   - overlay fade-in (opacity+visibility 过渡)
   - 左右键切换 + Esc 关闭
-- [ ] 移动端适配（tooltip → click popover，当前桌面端优先）
-- [ ] 实时推送（自选股监控 + 信号变化通知）
+
+### Phase 5: 信号验证 + 主动触达
+- [ ] 信号回填 — `update_signal_outcomes` 首批 5d 数据 (目标: 3/19 盘后)
+- [ ] 信号复盘看板 — 胜率/盈亏比可视化，Dashboard 新 tab 或独立页面 (目标: 本周)
+- [ ] 盘前播报 v1 — cron + Telegram Bot，每日 9:15 推送持仓+体制+异动 (目标: 下周)
+  - 内嵌体制切换告警（bull→volatile 等状态跃迁，比涨跌更值得推送）
+- [ ] 回测引擎 v1 — baostock 历史数据 + TideWatch 信号策略回测 vs 沪深300 (目标: 九坤面试前)
+
+### 冰箱（Icebox）— 条件成熟再做
+- 产业链图谱（HOT_POOL 按板块组织已部分覆盖）
+- 雪球数据源（baostock 够用，反爬维护成本高）
+- 多因子 ML 模型（需 500+ 信号样本量）
+- 情绪面接入（爬虫维护成本高）
+- 移动端适配（当前桌面端优先）
+- Dashboard dark mode（小龙虾建议的最高 ROI UI 改进）
 
 ## Deployment
 
@@ -182,14 +195,14 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - `stock_zh_a_spot_em()` 在本地 Mac 和 Azure VM 上均无法使用 — 根因是东方财富 `push2.eastmoney.com` 对非浏览器请求做了反爬限制（SSL 握手成功但返回 Empty reply），与 DNS 和地域无关。影响范围：`scan_market`、`get_stock_realtime`、`get_stock_name`（已有 fallback）。其他 AKShare 接口（日K线 `stock_zh_a_hist`、资金流向、新闻等）正常
 - MCP 工具不要加 `dict[str, Any]` 返回类型注解（FastMCP 2.x outputSchema 冲突）
 - 日志必须输出到 stderr（MCP 用 stdout 通信）
-- 信号记录已加 5 分钟去重窗口，同一 symbol 短时间内不重复入库
+- 信号记录已加当天去重：同一 symbol + 同一 score 当天内不重复入库（前端额外用 `date|symbol|score` key 去重展示）
 - 时间戳均使用北京时间 (UTC+8)，通过 `_now_bj()` 统一处理，Azure VM 默认 UTC
 - `analyze_stock` 股票名称解析链：持仓名称 → 自选名称 → HOT_NAMES → get_stock_name()，避免 push2 失效时显示代码
 - 后台预热仅在北京时间 7:00-23:59 执行，凌晨 0-7 点跳过（东方财富维护窗口断连）
 - 扫描缓存持久化到 `data/scan_cache.json`，重启后自动恢复，避免冷启动 Dashboard 显示空数据
-- Azure VM 并发 58 只股票拉 AKShare 会触发东方财富限流/断连，单个 analyze_stock 正常，ThreadPoolExecutor 已加 120s/10s 双层超时
+- Azure VM 并发 58 只股票拉 AKShare 会触发东方财富限流/断连，单个 analyze_stock 正常，ThreadPoolExecutor 已加 120s/10s 双层超时。HOT_POOL 已精简至 24 只，解决此问题
 - `analyze_stock` 通过 `asyncio.to_thread()` 包装，不阻塞事件循环
-- `scan_market` 同样通过 `asyncio.to_thread(_scan_market_sync)` 包装 — async def 里不能做同步阻塞 I/O（73只×0.3s=22s 会卡死整个事件循环）
+- `scan_market` 同样通过 `asyncio.to_thread(_scan_market_sync)` 包装 — async def 里不能做同步阻塞 I/O（~27只×0.3s=~8s 会卡死整个事件循环）
 - 日K线数据源已迁移至 baostock（单只 0.28s，零反爬），AKShare 仅用于资金流向/新闻/龙虎榜/北向/ETF
 - baostock 单连接 + `threading.Lock(acquire timeout=15s)` 保护线程安全 + 30s 自动重连
 - baostock socket 三层超时保护（🦞9.0/10）：monkey-patch `connect()` 注入 10s `settimeout` → `_bs_login()` 登录后双保险 `settimeout` → 异常统一走 `_force_close_bs_socket()` 关 socket + 标记 session 失效。根治僵尸 TCP 卡死进程问题
