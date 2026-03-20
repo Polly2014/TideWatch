@@ -140,7 +140,7 @@ TideWatch-MCP-Server/
   - LLM 润色区分"A股分析师" vs "美股分析师"角色和交易规则
   - 持仓上下文 ¥→$，去掉1手限制
   - TODO: SPY 自分析时 regime 会自引用（无 market context）
-  - TODO: Dashboard ¥→$ + 交易时段适配（21:30-04:00 北京时间）待前端实现
+  - Dashboard 美股适配 🦞 9.5/10：`isUSCode()`/`cur()`/`displayName()` 三件套，8处币种 ¥→$ + ticker主标题 + 混合币种摘要栏
 - [ ] 回测引擎 v1 — baostock 历史数据 + TideWatch 信号策略回测 vs 沪深300 (目标: 九坤面试前)
 
 ### 冰箱（Icebox）— 条件成熟再做
