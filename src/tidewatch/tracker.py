@@ -232,6 +232,8 @@ def update_outcomes(market_data) -> dict[str, Any]:
                     continue
 
                 # 找信号日期之后的第N个交易日
+                # 注意：A股和美股交易日不同，但 iloc[4] 取的是各自市场的第5个交易日，
+                # 这是正确的——美股用美股交易日，A股用A股交易日。
                 signal_dt = signal_date.date()
                 future = df[df["date"].dt.date > signal_dt]
 

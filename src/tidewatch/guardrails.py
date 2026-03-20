@@ -47,13 +47,15 @@ def check_guardrails(
 
 
 def _check_chasing(symbol: str, tech: dict) -> dict | None:
-    """追高检测：股票近5日涨幅>8%"""
+    """追高检测：股票近 5 日涨幅超阈值（A股 8% / 美股 15%，美股无涨跌停波动更大）"""
+    from .data import is_us_stock
     pct_5d = tech.get("price_position", {}).get("pct_5d", 0)
-    if pct_5d > 8:
+    threshold = 15 if is_us_stock(symbol) else 8
+    if pct_5d > threshold:
         return {
             "type": "fomo_chasing",
             "severity": "high",
-            "message": f"🚨 追高警告：这票近5日已涨 {pct_5d:.1f}%，你现在才来看。历史上追涨8%+的票胜率不到35%。",
+            "message": f"🚨 追高警告：这票近5日已涨 {pct_5d:.1f}%，你现在才来看。历史上追涨{threshold}%+的票胜率不到35%。",
             "advice": "如果真要买，等回调到5日线再介入，别在高位站岗。",
         }
     return None

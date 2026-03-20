@@ -171,7 +171,8 @@ class MarketData:
         """获取美股日K线 (yfinance)"""
         try:
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period=f"{days * 2}d")
+            start = (datetime.now() - timedelta(days=days * 2)).strftime("%Y-%m-%d")
+            df = ticker.history(start=start)
             if df.empty:
                 logger.warning(f"yfinance {symbol}: 无数据")
                 return pd.DataFrame()
@@ -188,17 +189,27 @@ class MarketData:
             logger.error(f"yfinance {symbol} 失败: {e}")
             return pd.DataFrame()
 
+    _us_name_cache: dict[str, str] = {}
+
     def get_us_stock_name(self, symbol: str) -> str:
-        """获取美股名称"""
+        """获取美股名称（内存缓存，避免重复 HTTP 请求）"""
+        if symbol in self._us_name_cache:
+            return self._us_name_cache[symbol]
         try:
             ticker = yf.Ticker(symbol)
             info = ticker.info
-            return info.get("shortName") or info.get("longName") or symbol
+            name = info.get("shortName") or info.get("longName") or symbol
+            self._us_name_cache[symbol] = name
+            return name
         except Exception:
             return symbol
 
     def get_us_index_daily(self, index_symbol: str = "SPY", days: int = 120) -> pd.DataFrame:
-        """获取美股指数日K线（SPY 作为 S&P 500 代理）"""
+        """获取美股指数日K线（SPY 作为 S&P 500 代理）
+        
+        TODO: 如果 analyze_stock("SPY")，regime 会用 SPY 跟自己比（无 market context）。
+        未来可加 SPY 特判或引入 VIX 做辅助体制识别。
+        """
         return self.get_us_stock_daily(index_symbol, days)
 
     def get_stock_daily(

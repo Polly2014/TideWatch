@@ -180,16 +180,18 @@ def _run_scan_warmup():
     from .technical import TechnicalAnalyzer
     tech_analyzer = TechnicalAnalyzer()
 
-    # 先拉一次体制，所有股票共用（避免重复拉指数）
-    try:
-        index_df = market_data.get_index_daily("000001", days=120)
-        regime_result = regime_detector.detect(index_df)
-        regime_adj = regime_detector.get_regime_adjustment(regime_result["regime"])
-        regime_bias = regime_adj["signal_bias"]
-    except Exception:
-        regime_bias = 0
+    # A股/美股分别拉一次体制，各自共用（避免重复拉指数）
+    _regime_biases = {}  # {"A": bias, "US": bias}
+    for market_key, idx_code in [("A", "000001"), ("US", "SPY")]:
+        try:
+            idx_df = market_data.get_index_daily(idx_code, days=120)
+            r = regime_detector.detect(idx_df)
+            _regime_biases[market_key] = regime_detector.get_regime_adjustment(r["regime"])["signal_bias"]
+        except Exception:
+            _regime_biases[market_key] = 0
 
     def _score_one(code):
+        regime_bias = _regime_biases["US"] if is_us_stock(str(code)) else _regime_biases["A"]
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
             if daily.empty:
@@ -410,8 +412,16 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     regime_result = regime_detector.detect(index_df)
     regime_adj = regime_detector.get_regime_adjustment(regime_result["regime"])
 
-    # 4. 资金面（已并发拉取）
+    # 4. 资金面（已并发拉取）/ 美股用 SPY 相对强弱替代
     money = f_money.result() if f_money else {}
+    if _is_us and not money and not index_df.empty and len(index_df) >= 5:
+        spy_pct_5d = (float(index_df.iloc[-1]["close"]) / float(index_df.iloc[-5]["close"]) - 1) * 100
+        stock_pct_5d = tech.get("price_position", {}).get("pct_5d", 0)
+        money["_us_relative"] = {
+            "spy_pct_5d": round(spy_pct_5d, 2),
+            "stock_pct_5d": round(stock_pct_5d, 2),
+            "relative": round(stock_pct_5d - spy_pct_5d, 2),
+        }
 
     # 5. 消息面（已并发拉取）
     news = f_news.result() if f_news else []
@@ -633,9 +643,10 @@ async def compare_stocks(symbols: str):
 
     输入逗号分隔的股票代码，对比它们的技术评分、
     趋势强度、量能状况等指标，帮助筛选最强标的。
+    注意：对比基于原始技术评分（未加体制调整），跨市场对比（如 AAPL vs 600519）可直接比较。
 
     Args:
-        symbols: 逗号分隔的股票代码，如 "002111,600519,000858"
+        symbols: 逗号分隔的股票代码，如 "002111,600519,000858" 或 "AAPL,MSFT,TSLA"
 
     Returns:
         横向对比表格，按技术评分排序
@@ -983,6 +994,7 @@ async def manage_account(
     账户资金管理 — 更新或查看账户资金信息
 
     用于记录真实账户的可用资金、总资产和持仓市值，以便 AI 分析时了解仓位空间。
+    注意：当前账户资金以人民币计价，美股持仓需自行折算。
 
     Args:
         action: 操作类型 ("update" / "view")
@@ -1055,16 +1067,18 @@ def _scan_market_sync(top_n: int):
     holdings_info = {h["symbol"]: h for h in get_holdings()}
     watchlist_info = {w["symbol"]: w for w in get_watchlist()}
 
-    # 拉一次体制调整，所有股票共用
-    try:
-        index_df = market_data.get_index_daily("000001", days=120)
-        _regime = regime_detector.detect(index_df)
-        _regime_adj = regime_detector.get_regime_adjustment(_regime["regime"])
-        _regime_bias = _regime_adj["signal_bias"]
-    except Exception:
-        _regime_bias = 0
+    # A股/美股分别拉一次体制，各自共用
+    _regime_biases = {}
+    for market_key, idx_code in [("A", "000001"), ("US", "SPY")]:
+        try:
+            idx_df = market_data.get_index_daily(idx_code, days=120)
+            r = regime_detector.detect(idx_df)
+            _regime_biases[market_key] = regime_detector.get_regime_adjustment(r["regime"])["signal_bias"]
+        except Exception:
+            _regime_biases[market_key] = 0
 
     def _score_stock(code: str) -> dict | None:
+        _regime_bias = _regime_biases["US"] if is_us_stock(str(code)) else _regime_biases["A"]
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
             if daily.empty or len(daily) < 20:

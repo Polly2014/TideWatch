@@ -129,12 +129,18 @@ TideWatch-MCP-Server/
   - 历史重复数据清理（60→29条）+ 回填按钮一键触发
 - [ ] 盘前播报 v1 — cron + Telegram Bot，每日 9:15 推送持仓+体制+异动 (目标: 下周)
   - 内嵌体制切换告警（bull→volatile 等状态跃迁，比涨跌更值得推送）
-- [ ] 美股支持 — yfinance 数据源 + 市场路由 + SPY 体制识别 (2026-03-20)
+- [x] 美股支持 — yfinance 数据源 + 市场路由 + SPY 体制识别 (2026-03-20)
   - `is_us_stock()` 自动识别（字母=美股，数字=A股）
-  - yfinance K线接入（免费、零反爬、全球市场）
+  - yfinance K线接入（免费、零反爬、全球市场），`start` 参数替代 `period`（精确控制范围）
   - 美股资金流/新闻/北向等 A 股特色接口返回空（graceful fallback）
-  - regime 用 SPY 替代沪深300，guardrails 去掉1手限制
-  - Dashboard: ¥→$、交易时段适配（21:30-04:00 北京时间）
+  - regime 用 SPY 替代沪深300，scan_market 按市场分别拉 A股/美股 regime
+  - `get_us_stock_name` 内存缓存（避免扫描循环重复 HTTP 请求）
+  - guardrails 追高阈值 A股 8% / 美股 15%（美股无涨跌停，波动更大）
+  - narrative 美股补充 SPY 相对强弱替代资金面段落
+  - LLM 润色区分"A股分析师" vs "美股分析师"角色和交易规则
+  - 持仓上下文 ¥→$，去掉1手限制
+  - TODO: SPY 自分析时 regime 会自引用（无 market context）
+  - TODO: Dashboard ¥→$ + 交易时段适配（21:30-04:00 北京时间）待前端实现
 - [ ] 回测引擎 v1 — baostock 历史数据 + TideWatch 信号策略回测 vs 沪深300 (目标: 九坤面试前)
 
 ### 冰箱（Icebox）— 条件成熟再做

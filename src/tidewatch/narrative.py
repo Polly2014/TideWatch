@@ -112,6 +112,7 @@ class NarrativeGenerator:
             context_parts.append(f"大盘{regime_desc}{hint}")
 
         main_net = money.get("main_net_inflow", None)
+        us_rel = money.get("_us_relative", None)
         if main_net is not None and main_net != 0:
             net_wan = abs(main_net) / 10000
             if net_wan >= 10000:
@@ -128,6 +129,16 @@ class NarrativeGenerator:
                 context_parts.append(f"主力资金净{direction}{flow_str}，和技术面方向矛盾")
             else:
                 context_parts.append(f"主力资金净{direction}{flow_str}")
+        elif us_rel:
+            # 美股：用 SPY 相对强弱替代资金面
+            rel = us_rel["relative"]
+            spy_pct = us_rel["spy_pct_5d"]
+            if abs(rel) < 1:
+                context_parts.append(f"近5日与SPY走势同步（SPY {spy_pct:+.1f}%）")
+            elif rel > 0:
+                context_parts.append(f"近5日跑赢SPY {rel:.1f}个百分点（SPY {spy_pct:+.1f}%），相对强势")
+            else:
+                context_parts.append(f"近5日跑输SPY {abs(rel):.1f}个百分点（SPY {spy_pct:+.1f}%），相对弱势")
 
         if context_parts:
             parts.append("。".join(context_parts) + "。")
