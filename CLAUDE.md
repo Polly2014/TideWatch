@@ -31,7 +31,7 @@ TideWatch-MCP-Server/
 │       ├── regime.py       # 市场体制识别
 │       ├── narrative.py    # 叙事式分析报告生成
 │       ├── llm.py          # LLM 叙事润色 (CopilotX + Claude Sonnet 4)
-│       ├── tracker.py      # 信号追踪系统 (SQLite, 5min去重)
+│       ├── tracker.py      # 信号追踪系统 (SQLite, 当天+同score去重)
 │       ├── guardrails.py   # 行为护栏 (Anti-FOMO, 3条规则)
 │       └── portfolio.py    # 三级股票池 (持仓+自选+热门24只)
 ├── config/                 # 部署配置
@@ -44,7 +44,7 @@ TideWatch-MCP-Server/
     └── signals.db          # 信号追踪数据库
 ```
 
-注意：Phase 1-4 全部完成。当前进入 Phase 5（信号验证 + 主动触达）。Dashboard 本地维护（`static/tidewatch.html`），不走 git push。HOT_POOL 已从 76 只精简至 24 只（8板块×3龙头），扫描耗时从 ~22s 降至 ~4.25s。
+注意：Phase 1-4 全部完成，Phase 5 前两项（信号回填 + 复盘看板）已完成。Dashboard 本地维护（`static/tidewatch.html`），不走 git push。HOT_POOL 已从 76 只精简至 24 只（8板块×3龙头），扫描耗时从 ~22s 降至 ~4.25s。
 
 ## MCP Tools
 
@@ -114,11 +114,27 @@ TideWatch-MCP-Server/
   - overlay fade-in (opacity+visibility 过渡)
   - 左右键切换 + Esc 关闭
 
-### Phase 5: 信号验证 + 主动触达
-- [ ] 信号回填 — `update_signal_outcomes` 首批 5d 数据 (目标: 3/19 盘后)
-- [ ] 信号复盘看板 — 胜率/盈亏比可视化，Dashboard 新 tab 或独立页面 (目标: 本周)
+### Phase 5: 信号验证 + 主动触达 (2026-03-19)
+- [x] 信号回填 — `update_signal_outcomes` 首批 5d 数据，13条回填，5d胜率76.9% (2026-03-19)
+  - 修复 `update_outcomes()` SQL SELECT 缺少 price_5d/10d/20d 列的 bug
+  - `update_signal_outcomes` 包装 `asyncio.to_thread()` 不阻塞事件循环
+- [x] 信号复盘看板 — Dashboard 新 Tab「🎯信号复盘」(2026-03-19)
+  - Tab 切换（📊实时面板 | 🎯信号复盘），自动刷新仅在实时面板触发
+  - 5 张统计卡（5d胜率 / 看多胜率 / 看空胜率 / 平均收益 / 已回填）
+  - 4 个过滤器（全部 / ✅正确 / ❌错误 / ⏳待验证）
+  - 日期分组时间线，卡片风格对齐主面板（box-shadow 柔光 + hover 上浮）
+  - 正确卡片浅绿底 + 绿色光晕 / 错误卡片浅红底 + 红色光晕 / 待验证降透明度
+  - 前端去重（同天同股保留最后分析）+ 后端当天去重（同symbol+同score）
+  - 样本不足（N≤2）显示灰色提示而非误导性百分比
+  - 历史重复数据清理（60→29条）+ 回填按钮一键触发
 - [ ] 盘前播报 v1 — cron + Telegram Bot，每日 9:15 推送持仓+体制+异动 (目标: 下周)
   - 内嵌体制切换告警（bull→volatile 等状态跃迁，比涨跌更值得推送）
+- [ ] 美股支持 — yfinance 数据源 + 市场路由 + SPY 体制识别 (2026-03-20)
+  - `is_us_stock()` 自动识别（字母=美股，数字=A股）
+  - yfinance K线接入（免费、零反爬、全球市场）
+  - 美股资金流/新闻/北向等 A 股特色接口返回空（graceful fallback）
+  - regime 用 SPY 替代沪深300，guardrails 去掉1手限制
+  - Dashboard: ¥→$、交易时段适配（21:30-04:00 北京时间）
 - [ ] 回测引擎 v1 — baostock 历史数据 + TideWatch 信号策略回测 vs 沪深300 (目标: 九坤面试前)
 
 ### 冰箱（Icebox）— 条件成熟再做

@@ -12,6 +12,7 @@ from typing import Optional
 import akshare as ak
 import baostock as bs
 import pandas as pd
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +118,13 @@ def _to_bs_code(symbol: str) -> str:
     return f"sz.{symbol}"
 
 
+def is_us_stock(symbol: str) -> bool:
+    """判断是否为美股代码（字母=美股，数字=A股）"""
+    return bool(symbol) and symbol[0].isalpha()
+
+
 class MarketData:
-    """A 股市场数据获取层"""
+    """A 股 + 美股市场数据获取层"""
 
     def __init__(self):
         # 全市场实时行情缓存
@@ -155,7 +161,45 @@ class MarketData:
     @staticmethod
     def _is_etf(symbol: str) -> bool:
         """判断是否为 ETF 代码（51xxxx/15xxxx/16xxxx/56xxxx/58xxxx）"""
-        return symbol[:2] in ("51", "15", "16", "56", "58") and len(symbol) == 6
+        return not is_us_stock(symbol) and symbol[:2] in ("51", "15", "16", "56", "58") and len(symbol) == 6
+
+    # ========================
+    # 美股数据 (yfinance)
+    # ========================
+
+    def get_us_stock_daily(self, symbol: str, days: int = 120) -> pd.DataFrame:
+        """获取美股日K线 (yfinance)"""
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period=f"{days * 2}d")
+            if df.empty:
+                logger.warning(f"yfinance {symbol}: 无数据")
+                return pd.DataFrame()
+            df = df.reset_index()
+            df = df.rename(columns={
+                "Date": "date", "Open": "open", "Close": "close",
+                "High": "high", "Low": "low", "Volume": "volume",
+            })
+            df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+            df["pct_change"] = df["close"].pct_change() * 100
+            df = df[["date", "open", "high", "low", "close", "volume", "pct_change"]]
+            return df.dropna(subset=["close"]).tail(days).reset_index(drop=True)
+        except Exception as e:
+            logger.error(f"yfinance {symbol} 失败: {e}")
+            return pd.DataFrame()
+
+    def get_us_stock_name(self, symbol: str) -> str:
+        """获取美股名称"""
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            return info.get("shortName") or info.get("longName") or symbol
+        except Exception:
+            return symbol
+
+    def get_us_index_daily(self, index_symbol: str = "SPY", days: int = 120) -> pd.DataFrame:
+        """获取美股指数日K线（SPY 作为 S&P 500 代理）"""
+        return self.get_us_stock_daily(index_symbol, days)
 
     def get_stock_daily(
         self,
@@ -164,16 +208,12 @@ class MarketData:
         adjust: str = "qfq",
     ) -> pd.DataFrame:
         """
-        获取个股/ETF 日K线数据（baostock 主力 + AKShare fallback）
-
-        Args:
-            symbol: 股票或ETF代码（纯数字，如 "002111" 或 "512400"）
-            days: 获取天数
-            adjust: 复权方式 qfq=前复权, hfq=后复权, ""=不复权
-
-        Returns:
-            DataFrame with columns: date, open, close, high, low, volume, pct_change
+        获取个股/ETF 日K线数据
+        美股: yfinance | A股: baostock 主力 + AKShare fallback
         """
+        # 美股路由
+        if is_us_stock(symbol):
+            return self.get_us_stock_daily(symbol, days)
         # 优先用 baostock（快、无反爬），线程锁保护单连接
         try:
             acquired = _bs_lock.acquire(timeout=15)
@@ -274,6 +314,9 @@ class MarketData:
 
     def get_stock_name(self, symbol: str) -> str:
         """根据代码获取股票/ETF名称"""
+        # 美股
+        if is_us_stock(symbol):
+            return self.get_us_stock_name(symbol)
         # ETF 名称查询
         if self._is_etf(symbol):
             try:
@@ -350,11 +393,11 @@ class MarketData:
 
     def get_index_daily(self, index_code: str = "000001", days: int = 120) -> pd.DataFrame:
         """
-        获取指数日K线（baostock 主力 + AKShare fallback）
-
-        Args:
-            index_code: 指数代码（000001=上证, 399001=深证, 399006=创业板）
+        获取指数日K线
+        美股指数 (SPY 等): yfinance | A股: baostock 主力 + AKShare fallback
         """
+        if is_us_stock(index_code):
+            return self.get_us_index_daily(index_code, days)
         # baostock（线程锁保护单连接）
         try:
             acquired = _bs_lock.acquire(timeout=15)

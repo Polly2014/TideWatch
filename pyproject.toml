@@ -16,6 +16,7 @@ numpy = ">=1.24.0"
 python-dotenv = ">=1.0.0"
 openai = ">=1.0.0"
 baostock = "^0.8.9"
+yfinance = ">=0.2.30"
 
 [tool.poetry.scripts]
 tidewatch = "tidewatch.server:main"

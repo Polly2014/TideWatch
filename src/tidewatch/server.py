@@ -53,7 +53,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
-from .data import MarketData
+from .data import MarketData, is_us_stock
 from .guardrails import check_guardrails
 from .llm import polish_narrative
 from .narrative import NarrativeGenerator
@@ -345,9 +345,9 @@ async def analyze_stock(
     输出带有冲突检测的综合研判。
 
     Args:
-        symbol: 股票代码（纯数字，如 "002111"）
-        include_news: 是否包含新闻消息面分析
-        include_money_flow: 是否包含资金流向
+        symbol: 股票代码（A股纯数字如 "002111"，美股字母如 "AAPL"）
+        include_news: 是否包含新闻消息面分析（美股暂不支持）
+        include_money_flow: 是否包含资金流向（美股暂不支持）
         days: K线天数（默认120个交易日）
         skip_llm: 跳过 LLM 叙事润色（Dashboard 快速模式用，先返回模板叙事）
 
@@ -364,14 +364,18 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
 
     # ETF 检测（纯前缀判断，无网络请求）
     is_etf = market_data._is_etf(symbol)
+    _is_us = is_us_stock(symbol)
 
-    # 并发拉取四个独立数据源（K线 + 指数 + 资金 + 新闻）
-    index_code = "000001"  # 上证指数
+    # 并发拉取数据源（K线 + 指数 + 资金 + 新闻）
+    # 美股：使用 SPY 作为基准指数，跳过 A 股独有的资金流向和新闻
+    index_code = "SPY" if _is_us else "000001"
+    _skip_money = _is_us or is_etf or not include_money_flow
+    _skip_news = _is_us or is_etf or not include_news
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         f_daily = executor.submit(market_data.get_stock_daily, symbol, days)
         f_index = executor.submit(market_data.get_index_daily, index_code, days)
-        f_money = executor.submit(market_data.get_money_flow, symbol) if include_money_flow and not is_etf else None
-        f_news = executor.submit(market_data.get_stock_news, symbol, 5) if include_news and not is_etf else None
+        f_money = executor.submit(market_data.get_money_flow, symbol) if not _skip_money else None
+        f_news = executor.submit(market_data.get_stock_news, symbol, 5) if not _skip_news else None
 
     # 1. 日K线（核心数据源，必须成功）
     df = f_daily.result()
@@ -448,9 +452,12 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
         if cost and cost > 0 and shares > 0:
             pnl_pct = round((price - cost) / cost * 100, 2)
             pnl_amt = round((price - cost) * shares, 0)
-            lots = shares // 100  # A股1手=100股
-            lot_note = f"（仅{lots}手，已是最小持仓单位，无法减半）" if lots <= 1 else f"（{lots}手）"
-            portfolio_ctx = f"用户持仓: {shares}股{lot_note}，成本价¥{cost:.2f}，当前浮{'\u76c8' if pnl_pct >= 0 else '\u4e8f'}{abs(pnl_pct):.1f}%（{'+'if pnl_amt>=0 else ''}{pnl_amt:.0f}元）"
+            if _is_us:
+                portfolio_ctx = f"用户持仓: {shares}股，成本价${cost:.2f}，当前浮{'\u76c8' if pnl_pct >= 0 else '\u4e8f'}{abs(pnl_pct):.1f}%（{'+'if pnl_amt>=0 else ''}{pnl_amt:.0f}美元）"
+            else:
+                lots = shares // 100  # A股1手=100股
+                lot_note = f"（仅{lots}手，已是最小持仓单位，无法减半）" if lots <= 1 else f"（{lots}手）"
+                portfolio_ctx = f"用户持仓: {shares}股{lot_note}，成本价¥{cost:.2f}，当前浮{'\u76c8' if pnl_pct >= 0 else '\u4e8f'}{abs(pnl_pct):.1f}%（{'+'if pnl_amt>=0 else ''}{pnl_amt:.0f}元）"
         else:
             portfolio_ctx = f"用户持仓: {shares}股"
     elif _watching:
@@ -462,7 +469,8 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     # 追加可用资金上下文
     _acct = get_account_info()
     if _acct["cash"] > 0:
-        portfolio_ctx += f"\n账户可用资金: ¥{_acct['cash']:,.2f}，总资产: ¥{_acct['total_assets']:,.2f}"
+        _cur = "$" if _is_us else "¥"
+        portfolio_ctx += f"\n账户可用资金: {_cur}{_acct['cash']:,.2f}，总资产: {_cur}{_acct['total_assets']:,.2f}"
 
     report = {
         "stock": {
@@ -501,6 +509,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             report["narrative"] = polish_narrative(
                 report["narrative"], stock_name, adjusted_score,
                 portfolio_context=portfolio_ctx,
+                is_us=_is_us,
             )
         except Exception as e:
             logger.debug(f"LLM 润色跳过: {e}")
