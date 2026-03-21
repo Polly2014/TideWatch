@@ -526,7 +526,6 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
                 portfolio_context=portfolio_ctx,
                 is_us=_is_us,
                 news=news,
-                lhb=lhb,
             )
         except Exception as e:
             logger.debug(f"LLM 润色跳过: {e}")
@@ -574,6 +573,7 @@ async def polish_narrative_llm(
     stock_name: str,
     score: int,
     portfolio_context: str = "",
+    news_headlines: str = "",
 ):
     """
     LLM 叙事润色 — 将模板叙事润色为自然的分析师语气
@@ -585,13 +585,22 @@ async def polish_narrative_llm(
         template_narrative: analyze_stock 返回的模板叙事文本
         stock_name: 股票名称
         score: 综合评分（adjusted_score）
-        portfolio_context: 用户持仓上下文（如 "用户持仓: 4600股，成本¥8.75，浮盈+20.1%"）
+        portfolio_context: 用户持仓上下文
+        news_headlines: 新闻标题（换行分隔，由前端从 analyze_stock 结果拼接）
 
     Returns:
         润色后的叙事文本
     """
+    # 将新闻标题字符串还原为 news list
+    news = []
+    if news_headlines:
+        news = [{"title": t.strip()} for t in news_headlines.split("\n") if t.strip()]
     try:
-        polished = polish_narrative(template_narrative, stock_name, score, portfolio_context=portfolio_context)
+        polished = polish_narrative(
+            template_narrative, stock_name, score,
+            portfolio_context=portfolio_context,
+            news=news,
+        )
         return {"narrative": polished}
     except Exception as e:
         logger.warning(f"LLM 润色失败: {e}")
