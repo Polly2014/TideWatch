@@ -472,19 +472,39 @@ class MarketData:
     # ========================
 
     def get_lhb(self, symbol: str) -> list[dict]:
-        """获取个股近期龙虎榜数据"""
+        """获取个股近期龙虎榜数据（按近30天日期范围查全市场后筛个股）"""
         try:
-            df = ak.stock_lhb_detail_em(symbol=symbol, date="近一月")
+            from datetime import datetime, timedelta
+            end_date = datetime.now().strftime("%Y%m%d")
+            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+            df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
+            if df.empty:
+                return []
+            # 筛选当前股票（代码列可能叫"代码"或"证券代码"）
+            code_col = None
+            for col in ["代码", "证券代码", "股票代码"]:
+                if col in df.columns:
+                    code_col = col
+                    break
+            if not code_col:
+                return []
+            df = df[df[code_col].astype(str).str.strip() == symbol]
             if df.empty:
                 return []
             records = []
             for _, row in df.head(10).iterrows():
+                # 列名可能因 AKShare 版本不同而变化，做兼容
+                date_val = row.get("上榜日期", row.get("日期", ""))
+                reason_val = row.get("上榜原因", row.get("解读", ""))
+                buy_val = row.get("买入总计", row.get("龙虎榜净买额", 0))
+                sell_val = row.get("卖出总计", 0)
+                net_val = row.get("净买入", row.get("龙虎榜净买额", 0))
                 records.append({
-                    "date": str(row.get("上榜日期", "")),
-                    "reason": str(row.get("上榜原因", "")),
-                    "buy_total": float(row.get("买入总计", 0)),
-                    "sell_total": float(row.get("卖出总计", 0)),
-                    "net": float(row.get("净买入", 0)),
+                    "date": str(date_val),
+                    "reason": str(reason_val),
+                    "buy_total": float(buy_val) if buy_val else 0,
+                    "sell_total": float(sell_val) if sell_val else 0,
+                    "net": float(net_val) if net_val else 0,
                 })
             return records
         except Exception as e:
