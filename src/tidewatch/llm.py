@@ -43,6 +43,8 @@ def polish_narrative(
     model: str = "",
     portfolio_context: str = "",
     is_us: bool = False,
+    news: list = None,
+    lhb: list = None,
 ) -> str:
     """
     用 LLM 润色模板叙事
@@ -54,6 +56,8 @@ def polish_narrative(
         model: LLM 模型（默认从环境变量读取）
         portfolio_context: 用户持仓上下文
         is_us: 是否为美股
+        news: 新闻列表
+        lhb: 龙虎榜数据
 
     Returns:
         润色后的叙事文本（失败时返回原文）
@@ -78,6 +82,24 @@ def polish_narrative(
         market_role = "A股分析师"
         market_rules = '- A股交易规则：最小交易单位1手=100股，不能买卖零股。如果用户只持1手，不要建议"减半仓"'
 
+    # 新闻摘要（如有）
+    news_section = ""
+    if news:
+        headlines = [f"- {n.get('title', '')}" for n in news[:5] if n.get('title')]
+        if headlines:
+            news_section = f"\n近期新闻：\n" + "\n".join(headlines) + "\n请结合新闻判断消息面对技术走势的影响，如有重大利好/利空务必提及。\n"
+
+    # 龙虎榜（如有）
+    lhb_section = ""
+    if lhb:
+        lhb_lines = []
+        for item in lhb[:3]:
+            net = item.get('net', 0)
+            net_str = f"净{'买' if net > 0 else '卖'}{abs(net)/10000:.0f}万"
+            lhb_lines.append(f"- {item.get('date', '')} {item.get('reason', '')} {net_str}")
+        if lhb_lines:
+            lhb_section = f"\n龙虎榜（近期上榜）：\n" + "\n".join(lhb_lines) + "\n龙虎榜反映机构/游资动向，请结合技术面判断主力意图。\n"
+
     prompt = f"""你是一位经验丰富的{market_role}，正在和朋友聊投资。
 请将以下分析报告润色为更自然、更有"聊天感"的短评。
 
@@ -92,7 +114,7 @@ def polish_narrative(
 
 股票：{stock_name}
 综合评分：{score:+d}
-{portfolio_section}
+{portfolio_section}{news_section}{lhb_section}
 原始分析：
 {template_narrative}"""
 

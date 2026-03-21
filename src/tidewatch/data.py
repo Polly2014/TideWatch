@@ -204,6 +204,24 @@ class MarketData:
         except Exception:
             return symbol
 
+    def get_us_stock_news(self, symbol: str, limit: int = 5) -> list[dict]:
+        """获取美股新闻（yfinance）"""
+        try:
+            ticker = yf.Ticker(symbol)
+            raw_news = ticker.news or []
+            news_list = []
+            for item in raw_news[:limit]:
+                news_list.append({
+                    "title": item.get("title", ""),
+                    "source": item.get("publisher", ""),
+                    "time": "",
+                    "content": "",
+                })
+            return news_list
+        except Exception as e:
+            logger.warning(f"yfinance {symbol} 新闻获取失败: {e}")
+            return []
+
     def get_us_index_daily(self, index_symbol: str = "SPY", days: int = 120) -> pd.DataFrame:
         """获取美股指数日K线（SPY 作为 S&P 500 代理）
         
@@ -495,7 +513,9 @@ class MarketData:
     # ========================
 
     def get_stock_news(self, symbol: str, limit: int = 10) -> list[dict]:
-        """获取个股相关新闻"""
+        """获取个股相关新闻（美股: yfinance | A股: AKShare）"""
+        if is_us_stock(symbol):
+            return self.get_us_stock_news(symbol, limit)
         try:
             df = ak.stock_news_em(symbol=symbol)
             news_list = []

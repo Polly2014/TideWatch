@@ -369,15 +369,17 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     _is_us = is_us_stock(symbol)
 
     # 并发拉取数据源（K线 + 指数 + 资金 + 新闻）
-    # 美股：使用 SPY 作为基准指数，跳过 A 股独有的资金流向和新闻
+    # 美股：使用 SPY 作为基准指数，跳过 A 股独有的资金流向
     index_code = "SPY" if _is_us else "000001"
     _skip_money = _is_us or is_etf or not include_money_flow
-    _skip_news = _is_us or is_etf or not include_news
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    _skip_news = is_etf or not include_news  # 美股也拉新闻（yfinance）
+    _skip_lhb = _is_us or is_etf  # 龙虎榜仅 A 股非 ETF
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         f_daily = executor.submit(market_data.get_stock_daily, symbol, days)
         f_index = executor.submit(market_data.get_index_daily, index_code, days)
         f_money = executor.submit(market_data.get_money_flow, symbol) if not _skip_money else None
         f_news = executor.submit(market_data.get_stock_news, symbol, 5) if not _skip_news else None
+        f_lhb = executor.submit(market_data.get_lhb, symbol) if not _skip_lhb else None
 
     # 1. 日K线（核心数据源，必须成功）
     df = f_daily.result()
@@ -425,6 +427,9 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
 
     # 5. 消息面（已并发拉取）
     news = f_news.result() if f_news else []
+
+    # 6. 龙虎榜（已并发拉取，仅 A 股非 ETF）
+    lhb = f_lhb.result() if f_lhb else []
 
     t2 = _time.monotonic()
     logger.info(f"⏱️ {symbol} 分析+体制+资金+新闻: {t2-t1:.1f}s (总 {t2-t0:.1f}s)")
@@ -502,6 +507,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
         "regime": regime_result,
         "money_flow": money,
         "news": news,
+        "lhb": lhb,
         "conflicts": conflicts,
         "advice": {
             "position_max": f"{regime_adj['position_max'] * 100:.0f}%",
@@ -519,6 +525,8 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
                 report["narrative"], stock_name, adjusted_score,
                 portfolio_context=portfolio_ctx,
                 is_us=_is_us,
+                news=news,
+                lhb=lhb,
             )
         except Exception as e:
             logger.debug(f"LLM 润色跳过: {e}")
