@@ -146,11 +146,11 @@ TideWatch-MCP-Server/
   - T1-1: 龙虎榜并发拉取+注入 report（AKShare 新版 API 适配，保留在 report 不喂 LLM）
   - T1-2: 新闻标题喂给 LLM prompt（A股 AKShare + 美股 yfinance，polish_narrative_llm 同步更新）
   - T1-3: 美股新闻 `yf.Ticker.news`（解析 `content.title` 嵌套格式，不再跳过美股新闻）
-- [ ] 数据增强 T2 — 补核心短板 (目标: 下周)
-  - T2-1: 基本面 PE/PB/ROE（baostock `query_profit_data`，最大缺口，~60行）
-  - T2-2: 换手率 `turn` 字段（baostock K线加列，与量比+OBV 三角交叉验证，~10行）
-  - T2-3: LLM 结构化输入（传评分+各维度关键数字+冲突列表，从"润色"升级为"半分析"，~30行）
-  - T2-4: 北向资金注入个股分析上下文（~15行 server.py）
+- [x] 数据增强 T2 — 补核心短板 (2026-03-21)
+  - T2-1: PE/PB 从 baostock K线取（peTTM+pbMRQ，零额外请求，之前永远是 0）
+  - T2-2: 换手率 turn 字段 + 异常检测（>8% 高换手 / 突降萧条），与量比+OBV 三角交叉
+  - T2-3: LLM 结构化输入 — data_summary 含评分/均线/动量/量能/换手率/估值/布林/体制/冲突，prompt 从"润色"升级为"半分析"（300字）
+  - T2-4: 北向资金 → 移入冰箱（当前不阻塞）
 
 ### 冰箱（Icebox）— 条件成熟再做
 - 产业链图谱（HOT_POOL 按板块组织已部分覆盖）
