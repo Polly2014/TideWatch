@@ -6,11 +6,17 @@
 
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# 北京时间 UTC+8（Azure VM 默认 UTC，必须显式指定时区）
+_BJ_TZ = timezone(timedelta(hours=8))
+
+def _now_bj():
+    return datetime.now(_BJ_TZ)
 
 # 数据库路径
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "signals.db"
@@ -67,7 +73,7 @@ def record_signal(
     conn = _get_conn()
     try:
         # 去重：同一 symbol + 同一 score 当天内不重复写入
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_start = _now_bj().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         existing = conn.execute(
             "SELECT id FROM signals WHERE symbol = ? AND score = ? AND timestamp > ?",
             (symbol, score, today_start),
@@ -82,7 +88,7 @@ def record_signal(
                 regime, confidence, reasons_bull, reasons_bear, conflicts)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                datetime.now().isoformat(),
+                _now_bj().isoformat(),
                 symbol,
                 name,
                 score,
@@ -107,7 +113,7 @@ def get_recent_signals(days: int = 7, symbol: Optional[str] = None) -> list[dict
     """获取最近N天的信号记录"""
     conn = _get_conn()
     try:
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (_now_bj() - timedelta(days=days)).isoformat()
         if symbol:
             rows = conn.execute(
                 "SELECT * FROM signals WHERE timestamp > ? AND symbol = ? ORDER BY timestamp DESC",
@@ -127,7 +133,7 @@ def get_signal_stats(days: int = 30) -> dict[str, Any]:
     """计算信号统计：胜率、方向分布等"""
     conn = _get_conn()
     try:
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (_now_bj() - timedelta(days=days)).isoformat()
 
         # 总信号数
         total = conn.execute(
@@ -168,12 +174,12 @@ def get_signal_stats(days: int = 30) -> dict[str, Any]:
             r["symbol"]
             for r in conn.execute(
                 "SELECT symbol FROM signals WHERE timestamp > ? ORDER BY timestamp DESC LIMIT 20",
-                ((datetime.now() - timedelta(hours=24)).isoformat(),),
+                ((_now_bj() - timedelta(hours=24)).isoformat(),),
             ).fetchall()
         ]
 
         # 今日分析次数
-        today_start = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
+        today_start = _now_bj().replace(hour=0, minute=0, second=0).isoformat()
         today_count = conn.execute(
             "SELECT COUNT(*) FROM signals WHERE timestamp > ?", (today_start,)
         ).fetchone()[0]
@@ -215,7 +221,7 @@ def update_outcomes(market_data) -> dict[str, Any]:
 
         if oldest_pending:
             oldest_date = datetime.fromisoformat(oldest_pending)
-            cal_days = (datetime.now() - oldest_date).days
+            cal_days = (_now_bj() - oldest_date).days
             # 日历天 < 7 时不可能有 5 个交易日（考虑周末），快速返回
             if cal_days < 7:
                 return {
@@ -235,7 +241,7 @@ def update_outcomes(market_data) -> dict[str, Any]:
 
         for row in pending:
             signal_date = datetime.fromisoformat(row["timestamp"])
-            days_elapsed = (datetime.now() - signal_date).days
+            days_elapsed = (_now_bj() - signal_date).days
             symbol = row["symbol"]
             price_at = row["price_at_signal"]
             score = row["score"]

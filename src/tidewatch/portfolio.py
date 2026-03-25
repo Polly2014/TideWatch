@@ -6,10 +6,16 @@
 
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# 北京时间 UTC+8（Azure VM 默认 UTC）
+_BJ_TZ = timezone(timedelta(hours=8))
+
+def _now_bj():
+    return datetime.now(_BJ_TZ)
 
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "signals.db"
 
@@ -113,7 +119,7 @@ def add_holding(symbol: str, name: str = "", cost: float = 0, shares: int = 0):
     conn = _get_conn()
     conn.execute(
         "INSERT OR REPLACE INTO holdings (symbol, name, cost, shares, added_at) VALUES (?, ?, ?, ?, ?)",
-        (symbol, name, cost, shares, datetime.now().isoformat()),
+        (symbol, name, cost, shares, _now_bj().isoformat()),
     )
     conn.commit()
     conn.close()
@@ -142,7 +148,7 @@ def get_holdings() -> list[dict]:
 def set_account_info(cash: float, total_assets: float = 0, market_value: float = 0):
     """更新账户资金信息"""
     conn = _get_conn()
-    now = datetime.now().isoformat()
+    now = _now_bj().isoformat()
     if cash > 0:
         conn.execute(
             "INSERT OR REPLACE INTO account_info (key, value, updated_at) VALUES (?, ?, ?)",
@@ -184,7 +190,7 @@ def add_watchlist(symbol: str, name: str = "", reason: str = ""):
     conn = _get_conn()
     conn.execute(
         "INSERT OR REPLACE INTO watchlist (symbol, name, reason, added_at) VALUES (?, ?, ?, ?)",
-        (symbol, name, reason, datetime.now().isoformat()),
+        (symbol, name, reason, _now_bj().isoformat()),
     )
     conn.commit()
     conn.close()
