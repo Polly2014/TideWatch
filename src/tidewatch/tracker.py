@@ -224,9 +224,10 @@ def update_outcomes(market_data) -> dict[str, Any]:
                 "skipped": True,
             }
 
-        # 盘中也不回填（9:15~15:30 期间数据不稳定），盘后才有意义
+        # 盘中也不回填（9:00~14:xx 期间数据不稳定），盘后才有意义
+        # A 股 15:00 收盘，cron 15:30 跑，hour=15 时已收盘，不拦
         hour = now.hour
-        if 9 <= hour < 16:
+        if 9 <= hour < 15:
             return {
                 **updated,
                 "message": f"盘中时段（{hour}:xx），建议收盘后回填",
