@@ -231,8 +231,10 @@ def _run_scan_warmup():
                 name = market_data.get_stock_name(str(code))
             raw_score = tech_result["trend"]["score"]
             adjusted = max(-100, min(100, raw_score + regime_bias))
-            # 信号基于 adjusted_score
-            if adjusted >= 25: sig = "看多"
+            # 信号基于 adjusted_score (v2: +50 才看多, 熊市弱多→中性)
+            if adjusted >= 50: sig = "看多"
+            elif adjusted >= 25:
+                sig = "中性观望" if regime_name in ("bear", "mild_bear") else "偏多"
             elif adjusted >= 8: sig = "偏多"
             elif adjusted <= -25: sig = "看空"
             elif adjusted <= -8: sig = "偏空"
@@ -519,9 +521,15 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     adjusted_score = raw_score + regime_adj["signal_bias"]
     adjusted_score = max(-100, min(100, adjusted_score))
 
-    # 8. 最终信号（与 technical.py 阈值同步）
-    if adjusted_score >= 25:
+    # 8. 最终信号（v2: +50 才看多, 熊市弱多→中性, 基于 52 条回填数据）
+    if adjusted_score >= 50:
         final_signal = "看多"
+    elif adjusted_score >= 25:
+        # bear/mild_bear 体制下 +25~+50 强制中性（回填 0/4 全错）
+        if regime_result.get("regime") in ("bear", "mild_bear"):
+            final_signal = "中性观望"
+        else:
+            final_signal = "偏多"
     elif adjusted_score >= 8:
         final_signal = "偏多"
     elif adjusted_score <= -25:
@@ -1256,7 +1264,8 @@ def _scan_market_sync(top_n: int):
 
             raw_score = tech_result["trend"]["score"]
             adj_score = max(-100, min(100, raw_score + _regime_bias))
-            if adj_score >= 25: adj_signal = "看多"
+            if adj_score >= 50: adj_signal = "看多"
+            elif adj_score >= 25: adj_signal = "偏多"
             elif adj_score >= 8: adj_signal = "偏多"
             elif adj_score <= -25: adj_signal = "看空"
             elif adj_score <= -8: adj_signal = "偏空"
