@@ -192,16 +192,22 @@ def _run_scan_warmup():
 
     # A股/美股分别拉一次体制，各自共用（避免重复拉指数）
     _regime_biases = {}  # {"A": bias, "US": bias}
+    _regime_names = {}   # {"A": "mild_bear", "US": "bull"}
     for market_key, idx_code in [("A", "000001"), ("US", "SPY")]:
         try:
             idx_df = market_data.get_index_daily(idx_code, days=120)
             r = regime_detector.detect(idx_df)
             _regime_biases[market_key] = regime_detector.get_regime_adjustment(r["regime"])["signal_bias"]
+            _regime_names[market_key] = r["regime"]
         except Exception:
             _regime_biases[market_key] = 0
+            _regime_names[market_key] = ""
 
     def _score_one(code):
-        regime_bias = _regime_biases["US"] if is_us_stock(str(code)) else _regime_biases["A"]
+        is_us = is_us_stock(str(code))
+        market_key = "US" if is_us else "A"
+        regime_bias = _regime_biases[market_key]
+        regime_name = _regime_names[market_key]
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
             if daily.empty:
@@ -232,6 +238,43 @@ def _run_scan_warmup():
             elif adjusted <= -8: sig = "偏空"
             else: sig = "中性观望"
 
+            # 轻量冲突检测（用 OBV 斜率代替资金流向，零额外网络请求）
+            scan_conflicts = []
+            trend_score = tech_result["trend"]["score"]
+            vol = tech_result.get("volume", {})
+            obv_slope = vol.get("obv_slope", 0)
+            pct_5d = tech_result.get("price_position", {}).get("pct_5d", 0)
+            # 技术看多但 OBV 资金流出
+            if trend_score > 10 and obv_slope < -0.02:
+                scan_conflicts.append({
+                    "type": "tech_vs_money",
+                    "description": "⚠️ 技术面偏多但主力资金在流出，可能是诱多",
+                })
+            # 技术看空但 OBV 资金流入
+            if trend_score < -10 and obv_slope > 0.02:
+                scan_conflicts.append({
+                    "type": "tech_vs_money",
+                    "description": "📋 技术面偏空但主力在吸筹，可能是洗盘",
+                })
+            # 个股强但大盘弱
+            if trend_score > 20 and regime_name in ("bear", "mild_bear"):
+                scan_conflicts.append({
+                    "type": "stock_vs_market",
+                    "description": "📉 个股技术面强但大盘偏弱，逆势走强需关注持续性",
+                })
+            # 放量下跌
+            if vol.get("expanding") and pct_5d < -3:
+                scan_conflicts.append({
+                    "type": "volume_price",
+                    "description": "🚨 放量下跌，可能是主力出逃信号",
+                })
+            # 缩量上涨
+            if vol.get("shrinking") and pct_5d > 3:
+                scan_conflicts.append({
+                    "type": "volume_price",
+                    "description": "📊 缩量上涨，上行动能不足",
+                })
+
             result = {
                 "code": str(code), "name": name,
                 "price": latest_price, "pct_today": pct_today,
@@ -241,6 +284,8 @@ def _run_scan_warmup():
                 "reasons_bull": tech_result["trend"]["reasons_bull"][:3],
                 "reasons_bear": tech_result["trend"]["reasons_bear"][:3],
             }
+            if scan_conflicts:
+                result["conflicts"] = scan_conflicts
             close_vals = "close" if "close" in daily.columns else "收盘"
             result["sparkline"] = [round(float(x), 2) for x in daily[close_vals].tail(7).tolist()]
             if code in holdings_info:
