@@ -49,7 +49,7 @@ def _now_bj():
     return datetime.now(_BJ_TZ)
 
 # analyze_stock 盘后缓存：{"symbol:YYYY-MM-DD": report}，同一股票同一交易日盘后只算一次
-_analyze_cache: dict[str, Any] = {}
+_analyze_cache: dict = {}
 _analyze_cache_date: str = ""  # 当前缓存的交易日，新交易日自动清空
 from typing import Any
 
