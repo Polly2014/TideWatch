@@ -390,6 +390,7 @@ def _run_scan_warmup():
         "timestamp": _now_bj().isoformat(),
     }
     # 残缺缓存覆盖保护：成功率过低时不覆盖旧缓存
+    # TODO: 0.5 阈值基于当前 ~32 只池子，若池子缩至 <10 只需调高
     scan_ratio = len(results) / len(all_symbols) if all_symbols else 0
     if scan_ratio < 0.5 and _scan_cache["result"]:
         logger.warning(f"⚠️ 预热扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")
@@ -1500,6 +1501,7 @@ def _scan_market_sync(top_n: int):
     }
 
     # 残缺缓存覆盖保护：成功率过低时不覆盖旧缓存
+    # TODO: 0.5 阈值基于当前 ~32 只池子，若池子缩至 <10 只需调高
     scan_ratio = len(results) / len(all_symbols) if all_symbols else 0
     if scan_ratio < 0.5 and _scan_cache["result"]:
         logger.warning(f"⚠️ 扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")

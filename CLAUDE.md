@@ -262,6 +262,7 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - baostock socket 三层超时保护（🦞9.0/10）：monkey-patch `connect()` 注入 10s `settimeout` → `_bs_login()` 登录后双保险 `settimeout` → 异常统一走 `_force_close_bs_socket()` 关 socket + 标记 session 失效。根治僵尸 TCP 卡死进程问题
 - Dashboard 自动刷新仅在盘中 + 可见标签 + 无详情面板时触发（智能三重守卫）
 - **数据库在远程 Azure VM 上** — `data/signals.db` 本地仅空库，排查持仓/自选/信号问题必须 SSH 到 Azure VM 查询
-- scan_market 级联失败保护（3+ A 股连续失败 → 暂停重连 baostock）+ 持仓/自选 A 股全缺失时末尾重试一轮，避免瞬时故障导致关键股票丢失
+- scan_market 级联失败保护（3+ A 股连续失败 → 暂停重连 baostock）+ 持仓/自选任一 A 股缺失时末尾重试一轮，避免瞬时故障导致关键股票丢失
+- scan_market 残缺缓存覆盖保护 — 扫描成功率 <50% 且已有旧缓存时，拒绝覆盖（last line of defense，防 baostock 长时间宕机导致残缺数据冻结到 Dashboard）
 - 回填 K 线日期去重 — baostock 偶发返回重复日期行，`drop_duplicates(subset=["date"])` 双层防护（data.py + tracker.py），10d/20d 增加日历天安全阀（14/28天）
 - scan_market 轻量冲突检测 — 用 OBV 斜率代替 AKShare 资金流向（零额外网络请求），5 种冲突类型（技术vs资金/个股vs大盘/放量下跌/缩量上涨），Dashboard 卡片直接渲染金色框 + 琥珀色冲突摘要文字
