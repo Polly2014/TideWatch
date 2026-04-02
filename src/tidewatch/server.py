@@ -480,6 +480,15 @@ async def analyze_stock(
     Returns:
         综合分析报告，包含技术面、资金面、消息面、市场体制、冲突检测
     """
+    # 防御校验：A股6位纯数字 / 美股1-5位字母（拦截误传的时间戳微秒等垃圾输入）
+    symbol = symbol.strip()
+    if is_us_stock(symbol):
+        if not symbol.isalpha() or len(symbol) > 5:
+            return {"error": f"无效的美股代码: {symbol}"}
+    else:
+        if not symbol.isdigit() or len(symbol) != 6:
+            return {"error": f"无效的A股代码: {symbol}（应为6位数字）"}
+
     logger.info(f"📊 开始分析: {symbol}")
     return await asyncio.to_thread(_analyze_stock_sync, symbol, include_news, include_money_flow, days, skip_llm)
 
