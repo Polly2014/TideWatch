@@ -8,6 +8,25 @@ LOG=/var/log/tidewatch-daily.log
 API_KEY=$(grep "^MCP_API_KEY=" /home/azureuser/GitHub_Workspace/TideWatch-MCP-Server/.env | cut -d= -f2)
 URL=http://localhost:8889/mcp
 
+# ── 交易日检测 — 非交易日(节假日/周末) early exit ──
+# 用 baostock 查沪深300今天有没有 K 线，无数据 = 非交易日
+TODAY_BJ=$(TZ=Asia/Shanghai date +%Y-%m-%d)
+IS_TRADING=$(cd /home/azureuser/GitHub_Workspace/TideWatch-MCP-Server && poetry run python3 -c "
+import baostock as bs
+bs.login()
+rs = bs.query_history_k_data_plus('sh.000300', 'date,close', start_date='$TODAY_BJ', end_date='$TODAY_BJ', frequency='d')
+rows = []
+while rs.error_code == '0' and rs.next():
+    rows.append(rs.get_row_data())
+bs.logout()
+print('YES' if rows else 'NO')
+" 2>/dev/null)
+
+if [ "$IS_TRADING" != "YES" ]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $TODAY_BJ is not a trading day, skipping" >> $LOG
+    exit 0
+fi
+
 call_mcp() {
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Calling $1..." >> $LOG
     R=$(curl -s -m ${3:-120} -X POST $URL -H 'Content-Type: application/json' -H 'Accept: application/json' -H "Authorization: Bearer $API_KEY" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}")
