@@ -28,7 +28,7 @@ def _get_client():
 
     try:
         from openai import OpenAI
-        _client = OpenAI(api_key=api_key, base_url=api_base)
+        _client = OpenAI(api_key=api_key, base_url=api_base, default_headers={"X-Client-Id": "tidewatch"})
         logger.info(f"LLM 客户端已初始化: {api_base}")
         return _client
     except Exception as e:
