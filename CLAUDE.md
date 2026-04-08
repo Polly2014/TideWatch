@@ -44,7 +44,7 @@ TideWatch-MCP-Server/
 ├── scripts/                # 部署脚本
 │   ├── setup_domain.sh     # DNS + Nginx + SSL 一键配置
 │   ├── tidewatch.service   # systemd 服务文件
-│   └── tidewatch-daily.sh  # 每日定时任务 (cron UTC 09:00，扫描+分析持仓+回填)
+    └── tidewatch-daily.sh  # 每日定时任务 (cron UTC 10:00 = BJ 18:00，扫描+分析持仓+回填)
 └── data/                   # 运行时数据 (git-ignored, 仅 Azure VM 上有实际数据)
     └── signals.db          # 信号追踪数据库 (持仓/自选/账户/信号全在远程 VM)
 ```
@@ -99,7 +99,7 @@ ssh -F ssh.config Azure-Server "sqlite3 ~/GitHub_Workspace/TideWatch-MCP-Server/
 ## Roadmap
 
 ### Phase 1: ✅ MCP Engine (2026-03-11)
-- [x] AKShare 数据接入（日K线 + 资金流向 + 新闻 + 北向资金 + 龙虎榜）
+- [x] 数据接入（日K线 baostock + 资金流向/新闻/龙虎榜 AKShare）
 - [x] 技术分析（8维评分：MA/RSI/MACD/KDJ/BOLL/ATR/OBV/形态识别）
 - [x] 市场体制识别（6种：牛/熊/横盘/高波动/震荡偏强/震荡偏弱）
 - [x] 冲突检测（5种矛盾信号：技术vs资金、个股vs大盘、量价背离等）
@@ -257,7 +257,7 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - 扫描缓存持久化到 `data/scan_cache.json`，重启后自动恢复，避免冷启动 Dashboard 显示空数据
 - Azure VM 并发 58 只股票拉 AKShare 会触发东方财富限流/断连，单个 analyze_stock 正常，ThreadPoolExecutor 已加 120s/10s 双层超时。HOT_POOL 已精简至 24 只，解决此问题
 - `analyze_stock` 通过 `asyncio.to_thread()` 包装，不阻塞事件循环
-- `scan_market` 同样通过 `asyncio.to_thread(_scan_market_sync)` 包装 — async def 里不能做同步阻塞 I/O（~27只×0.3s=~8s 会卡死整个事件循环）
+- `scan_market` 统一通过 `asyncio.to_thread(_run_scan_warmup)` 包装（2026-04-08 统一，删除旧 `_scan_market_sync`）— async def 里不能做同步阻塞 I/O（~27只×0.3s=~8s 会卡死整个事件循环）
 - 日K线数据源已迁移至 baostock（单只 0.28s，零反爬），AKShare 仅用于资金流向/新闻/龙虎榜/北向/ETF
 - baostock 单连接 + `threading.Lock(acquire timeout=15s)` 保护线程安全 + 30s 自动重连
 - baostock socket 三层超时保护（🦞9.0/10）：monkey-patch `connect()` 注入 10s `settimeout` → `_bs_login()` 登录后双保险 `settimeout` → 异常统一走 `_force_close_bs_socket()` 关 socket + 标记 session 失效。根治僵尸 TCP 卡死进程问题
@@ -268,3 +268,5 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - `analyze_stock` 入口符号格式校验 — A 股必须 6 位纯数字，美股必须 1-5 位纯字母，拒绝无效代码（防 cron 脚本等上游传入时间戳碎片）
 - 回填 K 线日期去重 — baostock 偶发返回重复日期行，`drop_duplicates(subset=["date"])` 双层防护（data.py + tracker.py），10d/20d 增加日历天安全阀（14/28天）
 - scan_market 轻量冲突检测 — 用 OBV 斜率代替 AKShare 资金流向（零额外网络请求），5 种冲突类型（技术vs资金/个股vs大盘/放量下跌/缩量上涨），Dashboard 卡片直接渲染金色框 + 琥珀色冲突摘要文字
+- scan_market 盘中缓存盲区修复（2026-04-08 🦞9.0/10）— 非盘中时检查缓存 timestamp，若为当天 15:30 前的盘中数据则强制走 `_run_scan_warmup` 刷新（含 scan_cache.json 持久化）。根因：baostock 午后宕机 → 缓存冻结在 13:01 → 15:05 后 `_is_market_hours()=False` → cron/Dashboard 永远返回旧数据
+- `_run_scan_warmup` 是 scan_market 唯一的扫描实现（2026-04-08 统一，删除旧 `_scan_market_sync` 196 行），所有路径（预热/盘中刷新/冷启动/强制刷新）共用，含 v2 信号阈值 + 冲突检测 + 磁盘持久化

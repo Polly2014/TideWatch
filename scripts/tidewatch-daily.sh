@@ -1,5 +1,5 @@
 #!/bin/bash
-# TideWatch daily cron — 每个工作日北京 17:00 (UTC 09:00)
+# TideWatch daily cron — 每个工作日北京 18:00 (UTC 10:00)
 # 1) scan_market 刷新持仓/自选价格
 # 2) analyze_stock 对每只持仓生成信号（含 LLM 叙事润色）
 # 3) update_signal_outcomes 回填历史信号
