@@ -186,13 +186,10 @@ def _warmup_loop():
                 logger.error(f"🔄 定时刷新失败: {e}")
 
 def _run_scan_warmup():
-    """执行 scan_market 的核心逻辑，填充 _scan_cache"""
+    """扫描核心逻辑（唯一实现）— 填充 _scan_cache + 持久化到磁盘"""
     pool = get_scan_pool()
     holdings_info = {h["symbol"]: h for h in get_holdings()}
     watchlist_info = {w["symbol"]: w for w in get_watchlist()}
-
-    from .technical import TechnicalAnalyzer
-    tech_analyzer = TechnicalAnalyzer()
 
     # A股/美股分别拉一次体制，各自共用（避免重复拉指数）
     _regime_biases = {}  # {"A": bias, "US": bias}
@@ -214,9 +211,9 @@ def _run_scan_warmup():
         regime_name = _regime_names[market_key]
         try:
             daily = market_data.get_stock_daily(str(code), days=60)
-            if daily.empty:
+            if daily.empty or len(daily) < 20:
                 return None
-            tech_result = tech_analyzer.analyze(daily)
+            tech_result = technical.analyze(daily)
             if "error" in tech_result:
                 return None
             close_col = "close" if "close" in daily.columns else "收盘"
@@ -235,7 +232,7 @@ def _run_scan_warmup():
                 name = market_data.get_stock_name(str(code))
             raw_score = tech_result["trend"]["score"]
             adjusted = max(-100, min(100, raw_score + regime_bias))
-            # 信号基于 adjusted_score (v2: +50 才看多, 熊市弱多→中性)
+            # v2 信号阈值（bear/mild_bear 体制下 +25~+50 强制中性）
             if adjusted >= 50: sig = "看多"
             elif adjusted >= 25:
                 sig = "中性观望" if regime_name in ("bear", "mild_bear") else "偏多"
@@ -250,31 +247,26 @@ def _run_scan_warmup():
             vol = tech_result.get("volume", {})
             obv_slope = vol.get("obv_slope", 0)
             pct_5d = tech_result.get("price_position", {}).get("pct_5d", 0)
-            # 技术看多但 OBV 资金流出
             if trend_score > 10 and obv_slope < -0.02:
                 scan_conflicts.append({
                     "type": "tech_vs_money",
                     "description": "⚠️ 技术面偏多但主力资金在流出，可能是诱多",
                 })
-            # 技术看空但 OBV 资金流入
             if trend_score < -10 and obv_slope > 0.02:
                 scan_conflicts.append({
                     "type": "tech_vs_money",
                     "description": "📋 技术面偏空但主力在吸筹，可能是洗盘",
                 })
-            # 个股强但大盘弱
             if trend_score > 20 and regime_name in ("bear", "mild_bear"):
                 scan_conflicts.append({
                     "type": "stock_vs_market",
                     "description": "📉 个股技术面强但大盘偏弱，逆势走强需关注持续性",
                 })
-            # 放量下跌
             if vol.get("expanding") and pct_5d < -3:
                 scan_conflicts.append({
                     "type": "volume_price",
                     "description": "🚨 放量下跌，可能是主力出逃信号",
                 })
-            # 缩量上涨
             if vol.get("shrinking") and pct_5d > 3:
                 scan_conflicts.append({
                     "type": "volume_price",
@@ -292,8 +284,7 @@ def _run_scan_warmup():
             }
             if scan_conflicts:
                 result["conflicts"] = scan_conflicts
-            close_vals = "close" if "close" in daily.columns else "收盘"
-            result["sparkline"] = [round(float(x), 2) for x in daily[close_vals].tail(7).tolist()]
+            result["sparkline"] = [round(float(x), 2) for x in daily[close_col].tail(7).tolist()]
             if code in holdings_info:
                 h = holdings_info[code]
                 result["added_at"] = h.get("added_at", "")
@@ -303,7 +294,8 @@ def _run_scan_warmup():
                     result["pnl_pct"] = round((latest_price - h["cost"]) / h["cost"] * 100, 2)
                     result["pnl_amount"] = round((latest_price - h["cost"]) * h.get("shares", 0), 2)
             return result
-        except Exception:
+        except Exception as e:
+            logger.debug(f"扫描 {code} 失败: {e}")
             return None
 
     all_symbols = pool["holdings"] + pool["watchlist"] + pool["hot"]
@@ -326,7 +318,7 @@ def _run_scan_warmup():
 
         # 级联失败检测：连续 3+ A 股失败 → 暂停重连 baostock
         if consecutive_failures >= 3:
-            logger.warning(f"⚠️ 预热级联失败: 连续 {consecutive_failures} 只 A 股失败，强制重连 baostock")
+            logger.warning(f"⚠️ 扫描级联失败: 连续 {consecutive_failures} 只 A 股失败，强制重连 baostock")
             try:
                 from .data import _force_close_bs_socket, _bs_login, _bs_lock
                 if _bs_lock.acquire(timeout=10):
@@ -334,20 +326,20 @@ def _run_scan_warmup():
                         _force_close_bs_socket()
                         _time.sleep(1)
                         _bs_login()
-                        logger.info("⚠️ 预热 baostock 重连成功，继续扫描")
+                        logger.info("⚠️ baostock 重连成功，继续扫描")
                     finally:
                         _bs_lock.release()
             except Exception as e:
-                logger.error(f"⚠️ 预热 baostock 重连失败: {e}")
+                logger.error(f"⚠️ baostock 重连失败: {e}")
             consecutive_failures = 0
 
         _time.sleep(0.05)  # 让出锁给 analyze_stock 请求
 
-    # 持仓/自选末尾重试：只要有任一关键 A 股缺失就重试
+    # 持仓/自选末尾重试：只要有任一关键 A 股缺失就重连后补一轮
     critical_symbols = pool["holdings"] + pool["watchlist"]
     missing_critical = [s for s in critical_symbols if s not in results and not is_us_stock(str(s))]
     if missing_critical:
-        logger.warning(f"🔄 预热: {len(missing_critical)} 只关键 A 股缺失({missing_critical})，末尾重试")
+        logger.warning(f"🔄 {len(missing_critical)} 只关键 A 股缺失({missing_critical})，末尾重试")
         try:
             from .data import _force_close_bs_socket, _bs_login, _bs_lock
             if _bs_lock.acquire(timeout=10):
@@ -362,38 +354,56 @@ def _run_scan_warmup():
                     r = _score_one(sym)
                     if r:
                         results[sym] = r
-                        logger.info(f"🔄 预热重试成功: {sym}")
+                        logger.info(f"🔄 重试成功: {sym}")
                 except Exception:
                     pass
                 _time.sleep(0.05)
         except Exception as e:
-            logger.error(f"🔄 预热末尾重试失败: {e}")
+            logger.error(f"🔄 末尾重试失败: {e}")
 
     # 重试后仍有缺失则告警
     still_missing = [s for s in critical_symbols if s not in results]
     if still_missing:
-        logger.error(f"❌ 预热完成但仍有 {len(still_missing)} 只关键股票缺失: {still_missing}")
+        logger.error(f"❌ 扫描完成但仍有 {len(still_missing)} 只关键股票缺失: {still_missing}")
 
-    holding_results = [results[s] for s in pool["holdings"] if s in results]
-    watchlist_results = [results[s] for s in pool["watchlist"] if s in results]
-    hot_results = [results[s] for s in pool["hot"] if s in results]
-    hot_sorted = sorted(hot_results, key=lambda x: x["score"], reverse=True)
+    holding_results = sorted([results[s] for s in pool["holdings"] if s in results], key=lambda x: x["score"], reverse=True)
+    watchlist_results = sorted([results[s] for s in pool["watchlist"] if s in results], key=lambda x: x["score"], reverse=True)
+    hot_results = sorted([results[s] for s in pool["hot"] if s in results], key=lambda x: x["score"], reverse=True)
+
+    # 持仓额外上下文：技术面弱但仍在盈利区时提示
+    for h in holding_results:
+        if h.get("pnl_pct") is not None and h["pnl_pct"] > 0 and h["score"] < -10:
+            h["context"] = "技术面弱但仍在盈利区，可考虑设置移动止盈"
+        elif h.get("pnl_pct") is not None and h["pnl_pct"] < -5 and h["score"] < -20:
+            h["context"] = "技术面+亏损双重压力，关注止损位"
+
+    # 自选为空时加引导提示
+    watchlist_hint = ""
+    if not watchlist_results and not pool["watchlist"]:
+        watchlist_hint = "自选池为空，用 manage_watchlist(action='add', symbol='xxx') 添加关注股票"
 
     scan_result = {
-        "holdings": sorted(holding_results, key=lambda x: x["score"], reverse=True),
-        "watchlist": sorted(watchlist_results, key=lambda x: x["score"], reverse=True),
-        "_hot_sorted": hot_sorted,
-        "hot_strongest": hot_sorted[:10],
-        "hot_weakest": sorted(hot_sorted[-10:], key=lambda x: x["score"]) if len(hot_sorted) > 10 else [],
+        "holdings": holding_results,
+        "watchlist": watchlist_results,
+        "watchlist_hint": watchlist_hint,
+        "_hot_sorted": hot_results,
+        "hot_strongest": hot_results[:10],
+        "hot_weakest": sorted(hot_results[-10:], key=lambda x: x["score"]) if len(hot_results) > 10 else [],
         "account": get_account_info(),
-        "pool_size": {"total": len(all_symbols), "scanned": len(results)},
+        "pool_size": {
+            "holdings": len(pool["holdings"]),
+            "watchlist": len(pool["watchlist"]),
+            "hot": len(pool["hot"]),
+            "total": len(all_symbols),
+            "scanned": len(results),
+        },
         "timestamp": _now_bj().isoformat(),
     }
     # 残缺缓存覆盖保护：成功率过低时不覆盖旧缓存
     # TODO: 0.5 阈值基于当前 ~32 只池子，若池子缩至 <10 只需调高
     scan_ratio = len(results) / len(all_symbols) if all_symbols else 0
     if scan_ratio < 0.5 and _scan_cache["result"]:
-        logger.warning(f"⚠️ 预热扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")
+        logger.warning(f"⚠️ 扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")
         return
 
     _scan_cache["result"] = scan_result
@@ -1315,18 +1325,18 @@ async def scan_market(top_n: int = 10):
 
     # 3) 完全无缓存 → 阻塞扫描（首次冷启动）
     logger.info("🔍 无缓存，执行全量扫描...")
-    return await asyncio.to_thread(_scan_market_sync, top_n)
+    await asyncio.to_thread(_run_scan_warmup)
+    return _slice_scan_cache(top_n)
 
 
 def _slice_scan_cache(top_n: int):
-    """从缓存中按 top_n 切片返回"""
+    """从缓存中按 top_n 切片返回（过滤内部字段）"""
     cached = _scan_cache["result"]
     hot_all = cached.get("_hot_sorted", [])
-    return {
-        **cached,
-        "hot_strongest": hot_all[:top_n],
-        "hot_weakest": sorted(hot_all[-top_n:], key=lambda x: x["score"]) if len(hot_all) > top_n else [],
-    }
+    output = {k: v for k, v in cached.items() if not k.startswith("_")}
+    output["hot_strongest"] = hot_all[:top_n]
+    output["hot_weakest"] = sorted(hot_all[-top_n:], key=lambda x: x["score"]) if len(hot_all) > top_n else []
+    return output
 
 
 def _bg_refresh_scan():
@@ -1340,212 +1350,6 @@ def _bg_refresh_scan():
     finally:
         _scan_bg_refreshing = False
 
-
-def _scan_market_sync(top_n: int):
-    """scan_market 的同步实现，在线程池中执行"""
-    pool = get_scan_pool()
-    holdings_info = {h["symbol"]: h for h in get_holdings()}
-    watchlist_info = {w["symbol"]: w for w in get_watchlist()}
-
-    # A股/美股分别拉一次体制，各自共用
-    _regime_biases = {}
-    for market_key, idx_code in [("A", "000001"), ("US", "SPY")]:
-        try:
-            idx_df = market_data.get_index_daily(idx_code, days=120)
-            r = regime_detector.detect(idx_df)
-            _regime_biases[market_key] = regime_detector.get_regime_adjustment(r["regime"])["signal_bias"]
-        except Exception:
-            _regime_biases[market_key] = 0
-
-    def _score_stock(code: str) -> dict | None:
-        _regime_bias = _regime_biases["US"] if is_us_stock(str(code)) else _regime_biases["A"]
-        try:
-            daily = market_data.get_stock_daily(str(code), days=60)
-            if daily.empty or len(daily) < 20:
-                return None
-            tech_result = technical.analyze(daily)
-            if "error" in tech_result:
-                return None
-
-            latest_row = daily.iloc[-1]
-            latest_price = float(latest_row.get("close", latest_row.get("收盘", 0)))
-            pct_today = float(latest_row.get("pct_change", latest_row.get("涨跌幅", 0)))
-            # 优先用持仓/自选中存的名称，然后查 HOT_NAMES，fallback 到 get_stock_name
-            stored_name = holdings_info.get(code, {}).get("name", "")
-            watchlist_name = watchlist_info.get(code, {}).get("name", "")
-            if stored_name and stored_name != code:
-                name = stored_name
-            elif watchlist_name and watchlist_name != code:
-                name = watchlist_name
-            elif code in HOT_NAMES:
-                name = HOT_NAMES[code]
-            else:
-                name = market_data.get_stock_name(str(code))
-
-            raw_score = tech_result["trend"]["score"]
-            adj_score = max(-100, min(100, raw_score + _regime_bias))
-            if adj_score >= 50: adj_signal = "看多"
-            elif adj_score >= 25: adj_signal = "偏多"
-            elif adj_score >= 8: adj_signal = "偏多"
-            elif adj_score <= -25: adj_signal = "看空"
-            elif adj_score <= -8: adj_signal = "偏空"
-            else: adj_signal = "中性观望"
-
-            result = {
-                "code": str(code),
-                "name": name,
-                "price": latest_price,
-                "pct_today": pct_today,
-                "score": adj_score,
-                "signal": adj_signal,
-                "rsi": tech_result["momentum"]["rsi_14"],
-                "reasons_bull": tech_result["trend"]["reasons_bull"][:3],
-                "reasons_bear": tech_result["trend"]["reasons_bear"][:3],
-            }
-
-            # 7日 sparkline 数据（迷你趋势线）
-            close_col = "close" if "close" in daily.columns else "收盘"
-            result["sparkline"] = [round(float(x), 2) for x in daily[close_col].tail(7).tolist()]
-
-            # 持仓额外信息
-            if code in holdings_info:
-                h = holdings_info[code]
-                result["added_at"] = h.get("added_at", "")
-                if h.get("cost") and h["cost"] > 0:
-                    result["cost"] = h["cost"]
-                    result["shares"] = h.get("shares", 0)
-                    result["pnl_pct"] = round((latest_price - h["cost"]) / h["cost"] * 100, 2)
-                    result["pnl_amount"] = round((latest_price - h["cost"]) * h.get("shares", 0), 2)
-
-            return result
-        except Exception as e:
-            logger.debug(f"扫描 {code} 失败: {e}")
-            return None
-
-    # 串行扫描（baostock 单连接 + 每只yield锁给 analyze_stock）
-    all_symbols = pool["holdings"] + pool["watchlist"] + pool["hot"]
-    results = {}
-    consecutive_failures = 0
-
-    for sym in all_symbols:
-        try:
-            r = _score_stock(sym)
-            if r:
-                results[sym] = r
-                consecutive_failures = 0
-            else:
-                # 仅对 A 股计数（美股走 yfinance，不受 baostock 影响）
-                if not is_us_stock(str(sym)):
-                    consecutive_failures += 1
-        except Exception:
-            if not is_us_stock(str(sym)):
-                consecutive_failures += 1
-
-        # 级联失败检测：连续 3+ A 股失败 → 暂停重连 baostock
-        if consecutive_failures >= 3:
-            logger.warning(f"⚠️ 扫描级联失败: 连续 {consecutive_failures} 只 A 股失败，强制重连 baostock")
-            try:
-                from .data import _force_close_bs_socket, _bs_login, _bs_lock
-                if _bs_lock.acquire(timeout=10):
-                    try:
-                        _force_close_bs_socket()
-                        _time.sleep(1)  # 等 baostock 服务端就绪
-                        _bs_login()
-                        logger.info("⚠️ baostock 重连成功，继续扫描")
-                    finally:
-                        _bs_lock.release()
-            except Exception as e:
-                logger.error(f"⚠️ baostock 重连失败: {e}")
-            consecutive_failures = 0
-
-        _time.sleep(0.05)  # 让出锁给 analyze_stock 请求
-
-    # 持仓/自选末尾重试：只要有任一关键 A 股缺失就重连后补一轮
-    critical_symbols = pool["holdings"] + pool["watchlist"]
-    missing_critical = [s for s in critical_symbols if s not in results and not is_us_stock(str(s))]
-    if missing_critical:
-        logger.warning(f"🔄 {len(missing_critical)} 只关键 A 股缺失({missing_critical})，末尾重试")
-        try:
-            from .data import _force_close_bs_socket, _bs_login, _bs_lock
-            if _bs_lock.acquire(timeout=10):
-                try:
-                    _force_close_bs_socket()
-                    _time.sleep(2)
-                    _bs_login()
-                finally:
-                    _bs_lock.release()
-            for sym in missing_critical:
-                try:
-                    r = _score_stock(sym)
-                    if r:
-                        results[sym] = r
-                        logger.info(f"🔄 重试成功: {sym}")
-                except Exception:
-                    pass
-                _time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"🔄 末尾重试失败: {e}")
-
-    # 分组输出
-    holding_results = [results[s] for s in pool["holdings"] if s in results]
-    watchlist_results = [results[s] for s in pool["watchlist"] if s in results]
-    hot_results = [results[s] for s in pool["hot"] if s in results]
-
-    # 持仓和自选按评分降序
-    holding_results.sort(key=lambda x: x["score"], reverse=True)
-    watchlist_results.sort(key=lambda x: x["score"], reverse=True)
-
-    # 热门按评分排序（完整列表缓存，返回时按 top_n 切片）
-    hot_results.sort(key=lambda x: x["score"], reverse=True)
-    hot_strongest = hot_results[:top_n]
-    hot_weakest = hot_results[-top_n:] if len(hot_results) > top_n else []
-    hot_weakest.sort(key=lambda x: x["score"])
-
-    # 持仓额外上下文：技术面弱但仍在盈利区时提示
-    for h in holding_results:
-        if h.get("pnl_pct") is not None and h["pnl_pct"] > 0 and h["score"] < -10:
-            h["context"] = "技术面弱但仍在盈利区，可考虑设置移动止盈"
-        elif h.get("pnl_pct") is not None and h["pnl_pct"] < -5 and h["score"] < -20:
-            h["context"] = "技术面+亏损双重压力，关注止损位"
-
-    # 自选为空时加引导提示
-    watchlist_hint = ""
-    if not watchlist_results and not pool["watchlist"]:
-        watchlist_hint = "自选池为空，用 manage_watchlist(action='add', symbol='xxx') 添加关注股票"
-
-    scan_result = {
-        "holdings": holding_results,
-        "watchlist": watchlist_results,
-        "watchlist_hint": watchlist_hint,
-        "hot_strongest": hot_strongest,
-        "hot_weakest": hot_weakest,
-        "_hot_sorted": hot_results,  # 完整列表用于缓存切片
-        "account": get_account_info(),
-        "pool_size": {
-            "holdings": len(pool["holdings"]),
-            "watchlist": len(pool["watchlist"]),
-            "hot": len(pool["hot"]),
-            "total": len(all_symbols),
-            "scanned": len(results),
-        },
-        "timestamp": _now_bj().isoformat(),
-    }
-
-    # 残缺缓存覆盖保护：成功率过低时不覆盖旧缓存
-    # TODO: 0.5 阈值基于当前 ~32 只池子，若池子缩至 <10 只需调高
-    scan_ratio = len(results) / len(all_symbols) if all_symbols else 0
-    if scan_ratio < 0.5 and _scan_cache["result"]:
-        logger.warning(f"⚠️ 扫描成功率过低 ({len(results)}/{len(all_symbols)} = {scan_ratio:.0%})，保留旧缓存")
-        output = {k: v for k, v in _scan_cache["result"].items() if not k.startswith("_")}
-        return output
-
-    # 缓存结果
-    _scan_cache["result"] = scan_result
-    _scan_cache["time"] = _time.monotonic()
-
-    # _hot_sorted 是内部缓存字段，不暴露给客户端
-    output = {k: v for k, v in scan_result.items() if not k.startswith("_")}
-    return output
 
 
 # ============================================================================
