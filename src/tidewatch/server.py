@@ -1282,27 +1282,28 @@ async def scan_market(top_n: int = 10):
     if _scan_cache["result"]:
         if not _is_market_hours():
             # 检查缓存是否是盘中的旧快照（收盘前数据，需刷新为收盘价）
-            _should_force = False
-            _cache_ts_str = _scan_cache["result"].get("timestamp", "")
-            if _cache_ts_str:
+            should_force = False
+            cache_ts_str = _scan_cache["result"].get("timestamp", "")
+            if cache_ts_str:
                 try:
-                    _cache_ts = datetime.fromisoformat(_cache_ts_str)
-                    if not _cache_ts.tzinfo:
-                        _cache_ts = _cache_ts.replace(tzinfo=_BJ_TZ)
-                    _now = _now_bj()
-                    # 今天的盘中数据（15:00 前）+ 现在已收盘 → 必须刷新
-                    if (_cache_ts.date() == _now.date()
-                            and _cache_ts.hour < 15
-                            and _now.weekday() < 5):
-                        _should_force = True
-                        logger.info("⚙️ 非盘中但缓存是盘中数据（%s），强制刷新...", _cache_ts.strftime("%H:%M"))
-                except Exception:
-                    pass
-            if not _should_force:
+                    cache_ts = datetime.fromisoformat(cache_ts_str)
+                    if not cache_ts.tzinfo:
+                        cache_ts = cache_ts.replace(tzinfo=_BJ_TZ)
+                    now = _now_bj()
+                    # 今天 15:30 前的缓存可能不含完整收盘数据（baostock 结算延迟）
+                    if (cache_ts.date() == now.date()
+                            and cache_ts.hour * 60 + cache_ts.minute < 15 * 60 + 30
+                            and now.weekday() < 5):
+                        should_force = True
+                        logger.info("⚙️ 非盘中但缓存是盘中数据（%s），强制刷新...", cache_ts.strftime("%H:%M"))
+                except Exception as e:
+                    logger.debug("缓存 timestamp 解析失败: %s", e)
+            if not should_force:
                 logger.info("⚙️ 非盘中，使用已有缓存（数据不变）")
                 return _slice_scan_cache(top_n)
-            # 强制刷新：走下面的阻塞扫描
-            return await asyncio.to_thread(_scan_market_sync, top_n)
+            # 强制刷新：走 _run_scan_warmup 确保持久化到 scan_cache.json
+            await asyncio.to_thread(_run_scan_warmup)
+            return _slice_scan_cache(top_n)
         # 盘中过期，先返回后台刷新
         if not _scan_bg_refreshing:
             _scan_bg_refreshing = True
