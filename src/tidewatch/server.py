@@ -1276,12 +1276,33 @@ async def scan_market(top_n: int = 10):
         return _slice_scan_cache(top_n)
 
     # 2) Stale-While-Revalidate: 有旧缓存 → 先返回旧数据，后台异步刷新
-    #    - 非盘中：数据不变，旧缓存完全有效，不触发刷新
+    #    - 非盘中 + 缓存是收盘后数据：数据不变，直接返回
+    #    - 非盘中 + 缓存是盘中数据：强制刷新（修复 2026-04-08 盲区：13:01 缓存冻结到次日）
     #    - 盘中：返回旧缓存 + 后台刷新，下次请求拿到新数据
     if _scan_cache["result"]:
         if not _is_market_hours():
-            logger.info("⚙️ 非盘中，使用已有缓存（数据不变）")
-            return _slice_scan_cache(top_n)
+            # 检查缓存是否是盘中的旧快照（收盘前数据，需刷新为收盘价）
+            _should_force = False
+            _cache_ts_str = _scan_cache["result"].get("timestamp", "")
+            if _cache_ts_str:
+                try:
+                    _cache_ts = datetime.fromisoformat(_cache_ts_str)
+                    if not _cache_ts.tzinfo:
+                        _cache_ts = _cache_ts.replace(tzinfo=_BJ_TZ)
+                    _now = _now_bj()
+                    # 今天的盘中数据（15:00 前）+ 现在已收盘 → 必须刷新
+                    if (_cache_ts.date() == _now.date()
+                            and _cache_ts.hour < 15
+                            and _now.weekday() < 5):
+                        _should_force = True
+                        logger.info("⚙️ 非盘中但缓存是盘中数据（%s），强制刷新...", _cache_ts.strftime("%H:%M"))
+                except Exception:
+                    pass
+            if not _should_force:
+                logger.info("⚙️ 非盘中，使用已有缓存（数据不变）")
+                return _slice_scan_cache(top_n)
+            # 强制刷新：走下面的阻塞扫描
+            return await asyncio.to_thread(_scan_market_sync, top_n)
         # 盘中过期，先返回后台刷新
         if not _scan_bg_refreshing:
             _scan_bg_refreshing = True

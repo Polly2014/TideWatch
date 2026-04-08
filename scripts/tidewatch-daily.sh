@@ -39,9 +39,8 @@ call_mcp() {
 echo '========================================' >> $LOG
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Daily scan started" >> $LOG
 
-# Step 1: Refresh scan cache
-call_mcp scan_market '{"tier":"holdings"}' 120
-call_mcp scan_market '{"tier":"watchlist"}' 120
+# Step 1: Refresh scan cache (单次即可，scan_market 扫描全部三级池)
+call_mcp scan_market '{"top_n":10}' 120
 
 # Step 2: Analyze each holding with LLM (generates signals for tracking)
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Analyzing holdings with LLM..." >> $LOG

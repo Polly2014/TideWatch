@@ -43,7 +43,8 @@ TideWatch-MCP-Server/
 │   └── mcp_remote.example.json         # 客户端配置示例
 ├── scripts/                # 部署脚本
 │   ├── setup_domain.sh     # DNS + Nginx + SSL 一键配置
-│   └── tidewatch.service   # systemd 服务文件
+│   ├── tidewatch.service   # systemd 服务文件
+│   └── tidewatch-daily.sh  # 每日定时任务 (cron UTC 09:00，扫描+分析持仓+回填)
 └── data/                   # 运行时数据 (git-ignored, 仅 Azure VM 上有实际数据)
     └── signals.db          # 信号追踪数据库 (持仓/自选/账户/信号全在远程 VM)
 ```
@@ -264,5 +265,6 @@ tidewatch.polly.wang:443 (Nginx + Let's Encrypt SSL)
 - **数据库在远程 Azure VM 上** — `data/signals.db` 本地仅空库，排查持仓/自选/信号问题必须 SSH 到 Azure VM 查询
 - scan_market 级联失败保护（3+ A 股连续失败 → 暂停重连 baostock）+ 持仓/自选任一 A 股缺失时末尾重试一轮，避免瞬时故障导致关键股票丢失
 - scan_market 残缺缓存覆盖保护 — 扫描成功率 <50% 且已有旧缓存时，拒绝覆盖（last line of defense，防 baostock 长时间宕机导致残缺数据冻结到 Dashboard）
+- `analyze_stock` 入口符号格式校验 — A 股必须 6 位纯数字，美股必须 1-5 位纯字母，拒绝无效代码（防 cron 脚本等上游传入时间戳碎片）
 - 回填 K 线日期去重 — baostock 偶发返回重复日期行，`drop_duplicates(subset=["date"])` 双层防护（data.py + tracker.py），10d/20d 增加日历天安全阀（14/28天）
 - scan_market 轻量冲突检测 — 用 OBV 斜率代替 AKShare 资金流向（零额外网络请求），5 种冲突类型（技术vs资金/个股vs大盘/放量下跌/缩量上涨），Dashboard 卡片直接渲染金色框 + 琥珀色冲突摘要文字
