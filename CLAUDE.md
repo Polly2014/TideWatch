@@ -49,7 +49,7 @@ TideWatch-MCP-Server/
     └── signals.db          # 信号追踪数据库 (持仓/自选/账户/信号全在远程 VM)
 ```
 
-注意：Phase 1-4 全部完成，Phase 5 前两项（信号回填 + 复盘看板）已完成。Dashboard 本地维护（`static/tidewatch.html`），不走 git push。HOT_POOL 已从 76 只精简至 24 只（8板块×3龙头），扫描耗时从 ~22s 降至 ~4.25s。
+注意：Phase 1-4 全部完成，Phase 5 前两项（信号回填 + 复盘看板）已完成。Dashboard 本地维护（`/static/tidewatch.html`，在 Zola 站点根目录下），不走 git push。HOT_POOL 已从 76 只精简至 24 只（8板块×3龙头），扫描耗时从 ~22s 降至 ~4.25s。
 
 **⚠️ 数据库在远程 Azure VM 上**：`data/signals.db`（含持仓、自选、账户资金、信号记录）只在 Azure VM 有实际数据，本地仅有空库。排查数据问题时必须 SSH 到远程查询：
 ```bash

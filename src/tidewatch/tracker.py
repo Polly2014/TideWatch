@@ -69,17 +69,33 @@ def record_signal(
     reasons_bear: list[str],
     conflicts: list[dict],
 ) -> int:
-    """记录一次分析信号（同一 symbol + 同一 score 当天内不重复记录）"""
+    """记录一次分析信号（同一 symbol 当天内不重复记录，score 变了则 UPDATE）"""
     conn = _get_conn()
     try:
-        # 去重：同一 symbol + 同一 score 当天内不重复写入
+        # 去重：同一 symbol 当天内只保留一条（以最新为准）
         today_start = _now_bj().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         existing = conn.execute(
-            "SELECT id FROM signals WHERE symbol = ? AND score = ? AND timestamp > ?",
-            (symbol, score, today_start),
+            "SELECT id, score FROM signals WHERE symbol = ? AND timestamp > ?",
+            (symbol, today_start),
         ).fetchone()
         if existing:
-            logger.info(f"⏭️ 信号去重: {symbol}(score={score}) 今日已记录 (#{existing['id']})")
+            if existing["score"] == score:
+                logger.info(f"⏭️ 信号去重: {symbol}(score={score}) 今日已记录 (#{existing['id']})")
+                return existing["id"]
+            # score 变了，UPDATE 而不是新增
+            conn.execute(
+                """UPDATE signals SET timestamp=?, score=?, direction=?, price_at_signal=?,
+                   regime=?, confidence=?, reasons_bull=?, reasons_bear=?, conflicts=?
+                   WHERE id=?""",
+                (
+                    _now_bj().isoformat(), score, direction, price, regime, confidence,
+                    ", ".join(reasons_bull), ", ".join(reasons_bear),
+                    "; ".join(c.get("description", "") for c in conflicts) if conflicts else "",
+                    existing["id"],
+                ),
+            )
+            conn.commit()
+            logger.info(f"📝 信号已更新: #{existing['id']} {symbol} {direction}({score:+d}) @ {price} (旧score={existing['score']})")
             return existing["id"]
 
         cursor = conn.execute(

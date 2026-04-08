@@ -754,8 +754,9 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     except Exception as e:
         logger.warning(f"行为护栏检测失败: {e}")
 
-    # 11. 记录信号到追踪系统（自动，不影响主流程）
-    try:
+    # 11. 记录信号到追踪系统（仅完整分析，skip_llm 模式不写信号 — 防止冒烟测试 / Dashboard 点击污染信号池）
+    if not skip_llm:
+      try:
         signal_id = record_signal(
             symbol=symbol,
             name=stock_name,
@@ -769,7 +770,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
             conflicts=conflicts,
         )
         report["signal"]["tracked_id"] = signal_id
-    except Exception as e:
+      except Exception as e:
         logger.warning(f"信号记录失败: {e}")
 
     t3 = _time.monotonic()
