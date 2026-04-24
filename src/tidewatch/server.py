@@ -241,7 +241,9 @@ def _run_scan_warmup():
                     sig = "中性观望"
                 else:
                     sig = "看空"
-            else: sig = "中性观望"
+            else:
+                # P1: [-25,-8) 原偏空区间 + [-8,+8) 均归入中性（偏空 40% 胜率+反向收益）
+                sig = "中性观望"
 
             # 轻量冲突检测（用 OBV 斜率代替资金流向，零额外网络请求）
             scan_conflicts = []
@@ -634,7 +636,18 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
     #   P0: confidence < 40 强制中性（低 conf 47.8% ≈ 抛硬币, 高 conf 72.1%）
     #   P1: 偏空消灭 — [-25,-8) 合入中性（40% 胜率 + 反向收益 +2.07%）
     #   P2: mild_bull 下看空阈值收窄到 -35（mild_bull+偏空 33.3%）
+    _p0_downgraded = False  # 追踪 P0 降级，用于 record_signal 标注原始方向
     if confidence_val < 40:
+        # P0: 计算原始方向用于回填分析追踪
+        if adjusted_score >= 50:
+            _p0_original = "看多"
+        elif adjusted_score <= -25:
+            _p0_original = "看空"
+        else:
+            _p0_original = None  # 本来就是中性，无需标注
+        if _p0_original:
+            _p0_downgraded = True
+            tech["trend"]["reasons_bear"].append(f"[P0降级] conf={confidence_val}<40, 原始方向={_p0_original}")
         final_signal = "中性观望"
     elif adjusted_score >= 50:
         if regime_name == "mild_bear":
@@ -650,7 +663,7 @@ def _analyze_stock_sync(symbol, include_news, include_money_flow, days, skip_llm
         else:
             final_signal = "看空"
     else:
-        # P1: [-25,-8) 原偏空区间全部归入中性观望
+        # P1: [-25,-8) 原偏空区间 + [-8,+8) 均归入中性观望（偏空 40% 胜率+反向收益+2.07%）
         final_signal = "中性观望"
 
     server_stats["analyses_completed"] += 1
@@ -1377,7 +1390,7 @@ def _calc_confidence(adjusted_score: int, symbol: str) -> int:
     - 高 conf (70+): 72.1% 胜率
     - 中 conf (40-69): 50.0% 胜率
     - 低 conf (<40): 47.8% 胜率 → P0: 强制中性
-    - 翻转信号: 30% 胜率 vs 非翻转 71.6%
+    - 翻转信号: 33.3% 胜率 (12条) vs 非翻转 62.7% (102条)
     """
     conf = min(abs(adjusted_score), 100)
 
