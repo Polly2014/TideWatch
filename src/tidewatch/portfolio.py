@@ -115,8 +115,17 @@ def _get_conn() -> sqlite3.Connection:
 # --- 持仓 ---
 
 def add_holding(symbol: str, name: str = "", cost: float = 0, shares: int = 0):
-    """添加或更新持仓"""
+    """添加或更新持仓
+
+    防御：当传入 name 为空或等于 symbol（解析失败的常见结果），
+    且 DB 中已存在有效 name，则保留旧值，避免覆盖污染。
+    """
     conn = _get_conn()
+    if not name or name == symbol:
+        row = conn.execute("SELECT name FROM holdings WHERE symbol = ?", (symbol,)).fetchone()
+        if row and row["name"] and row["name"] != symbol:
+            name = row["name"]
+            logger.info(f"📌 保留已有 name: {symbol} → {name}")
     conn.execute(
         "INSERT OR REPLACE INTO holdings (symbol, name, cost, shares, added_at) VALUES (?, ?, ?, ?, ?)",
         (symbol, name, cost, shares, _now_bj().isoformat()),
@@ -186,8 +195,17 @@ def get_account_info() -> dict:
 # --- 自选 ---
 
 def add_watchlist(symbol: str, name: str = "", reason: str = ""):
-    """添加自选股"""
+    """添加自选股
+
+    防御：当传入 name 为空或等于 symbol（解析失败的常见结果），
+    且 DB 中已存在有效 name，则保留旧值，避免覆盖污染。
+    """
     conn = _get_conn()
+    if not name or name == symbol:
+        row = conn.execute("SELECT name FROM watchlist WHERE symbol = ?", (symbol,)).fetchone()
+        if row and row["name"] and row["name"] != symbol:
+            name = row["name"]
+            logger.info(f"👀 保留已有 name: {symbol} → {name}")
     conn.execute(
         "INSERT OR REPLACE INTO watchlist (symbol, name, reason, added_at) VALUES (?, ?, ?, ?)",
         (symbol, name, reason, _now_bj().isoformat()),
