@@ -34,7 +34,7 @@ TideWatch-MCP-Server/
 │       ├── technical.py    # 技术分析引擎
 │       ├── regime.py       # 市场体制识别
 │       ├── narrative.py    # 叙事式分析报告生成
-│       ├── llm.py          # LLM 叙事润色 (CopilotX + Claude Sonnet 4)
+│       ├── llm.py          # LLM 叙事润色 (CopilotX + Claude Sonnet 4.6)
 │       ├── tracker.py      # 信号追踪系统 (SQLite, 当天+同score去重)
 │       ├── guardrails.py   # 行为护栏 (Anti-FOMO, 3条规则)
 │       └── portfolio.py    # 三级股票池 (持仓+自选+热门24只)

@@ -67,7 +67,7 @@ def polish_narrative(
     if client is None:
         return template_narrative
 
-    model = model or os.getenv("COPILOTX_MODEL", "claude-sonnet-4")
+    model = model or os.getenv("COPILOTX_MODEL", "claude-sonnet-4.6")
 
     portfolio_section = ""
     if portfolio_context:
