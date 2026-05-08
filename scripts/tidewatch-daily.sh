@@ -1,6 +1,6 @@
 #!/bin/bash
-# TideWatch daily cron — 每个工作日北京 18:00 (UTC 10:00)
-# 1) scan_market 刷新持仓/自选价格
+# TideWatch daily cron — 每个工作日北京 18:30 (UTC 10:30)
+# 1) scan_market 刷新持仓/自选价格（force_refresh 跳过缓存）
 # 2) analyze_stock 对每只持仓生成信号（含 LLM 叙事润色）
 # 3) update_signal_outcomes 回填历史信号
 
@@ -40,7 +40,7 @@ echo '========================================' >> $LOG
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Daily scan started" >> $LOG
 
 # Step 1: Refresh scan cache (单次即可，scan_market 扫描全部三级池)
-call_mcp scan_market '{"top_n":10}' 120
+call_mcp scan_market '{"top_n":10,"force_refresh":true}' 120
 
 # Step 2: Analyze each holding with LLM (generates signals for tracking)
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Analyzing holdings with LLM..." >> $LOG

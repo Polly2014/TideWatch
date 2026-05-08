@@ -1308,7 +1308,7 @@ async def manage_account(
 
 
 @mcp.tool()
-async def scan_market(top_n: int = 10):
+async def scan_market(top_n: int = 10, force_refresh: bool = False):
     """
     三级股票池扫描 — 持仓 + 自选 + 热门，按技术评分排序
 
@@ -1319,13 +1319,20 @@ async def scan_market(top_n: int = 10):
 
     Args:
         top_n: 热门池中返回最强/最弱各多少只（默认10）
+        force_refresh: 强制刷新，跳过所有缓存（用于 daily cron 确保拿到最新收盘数据）
 
     Returns:
         持仓全部 + 自选全部 + 热门 Top/Bottom N，按评分排序
     """
     global _scan_bg_refreshing
-    logger.info(f"🔍 三级股票池扫描: Top/Bottom {top_n}")
+    logger.info(f"🔍 三级股票池扫描: Top/Bottom {top_n}, force_refresh={force_refresh}")
     server_stats["scans_completed"] += 1
+
+    # force_refresh: 跳过所有缓存，直接全量扫描
+    if force_refresh:
+        logger.info("🔄 force_refresh=true，跳过缓存，执行全量扫描...")
+        await asyncio.to_thread(_run_scan_warmup)
+        return _slice_scan_cache(top_n)
 
     cache_age = _time.monotonic() - _scan_cache["time"] if _scan_cache["result"] else float("inf")
 
